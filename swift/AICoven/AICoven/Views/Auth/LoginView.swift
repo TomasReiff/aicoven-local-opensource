@@ -228,25 +228,42 @@ struct AuthModeButton: View {
 // MARK: - Signup Tutorial Layout
 
 private extension LoginView {
+    // Signup content styled to match sign-in page (no hero banner or stepper)
     var signupContent: some View {
         ScrollView {
             VStack(spacing: 0) {
-                signupHero
+                VStack(spacing: 24) {
+                    // Header matching sign-in style with app icon
+                    VStack(spacing: 16) {
+                        if let iconImage = loadAppIcon() {
+                            #if os(iOS)
+                            Image(uiImage: iconImage)
+                                .resizable()
+                                .frame(width: 80, height: 80)
+                                .shadow(color: Color.aicovenTeal.opacity(0.5), radius: 20, x: 0, y: 0)
+                            #elseif os(macOS)
+                            Image(nsImage: iconImage)
+                                .resizable()
+                                .frame(width: 80, height: 80)
+                                .shadow(color: Color.aicovenTeal.opacity(0.5), radius: 20, x: 0, y: 0)
+                            #endif
+                        } else {
+                            appIconFallback
+                        }
 
-                VStack(spacing: Spacing.lg) {
-                    signupStepper
-
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
                         Text("Create your account")
-                            .font(.aicovenH1)
+                            .font(.aicovenDisplayMedium)
                             .foregroundColor(.aicovenTextPrimary)
+
                         Text("Join the circle of intelligences")
-                            .font(.aicovenBodySmall)
+                            .font(.aicovenBody)
                             .foregroundColor(.aicovenTextSecondary)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 60)
+                    .padding(.bottom, 32)
 
-                    VStack(spacing: Spacing.md) {
+                    // Form fields
+                    VStack(spacing: 20) {
                         HStack(spacing: Spacing.md) {
                             SignupTextField(
                                 label: "First Name",
@@ -293,55 +310,56 @@ private extension LoginView {
                             isSecureVisible: $isConfirmPasswordVisible
                         )
                         .textContentType(.newPassword)
-                    }
 
-                    Button(action: handleSubmit) {
-                        HStack(spacing: Spacing.xs) {
-                            if isLoading {
-                                ProgressView()
-                                    .tint(.white)
-                            } else {
-                                Text("Continue")
-                                    .font(.aicovenBodyMedium)
-                                    .foregroundColor(.white)
-                                Image(systemName: "arrow.right")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.white)
+                        // Submit button matching sign-in style
+                        Button(action: handleSubmit) {
+                            HStack(spacing: Spacing.xs) {
+                                if isLoading {
+                                    ProgressView()
+                                        .tint(.white)
+                                } else {
+                                    Text("Create Account")
+                                        .font(.aicovenBodyMedium)
+                                        .foregroundColor(.white)
+                                }
                             }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.md)
-                        .background(
-                            LinearGradient(
-                                colors: [Color(hex: "#009689"), Color(hex: "#00BBA7")],
-                                startPoint: .leading,
-                                endPoint: .trailing
+                            .frame(maxWidth: .infinity)
+                            .padding(Spacing.md)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color.aicovenTeal, Color.aicovenPurple],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
                             )
-                        )
-                        .cornerRadius(10)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isLoading || !isFormValid)
-                    .opacity(isFormValid && !isLoading ? 1.0 : 0.5)
+                            .cornerRadius(BorderRadius.md)
+                            .shadow(
+                                color: isFormValid && !isLoading ? Color.aicovenTeal.opacity(0.5) : .clear,
+                                radius: 12,
+                                x: 0,
+                                y: 4
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isLoading || !isFormValid)
+                        .opacity(isFormValid && !isLoading ? 1.0 : 0.5)
 
-                    HStack(spacing: Spacing.xs) {
-                        Text("Already have an account?")
-                            .font(.aicovenBodySmall)
-                            .foregroundColor(.aicovenTextSecondary)
-                        Button("Sign in") {
+                        // Link to sign in
+                        Button("Already have an account? Sign in") {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 mode = .signin
                             }
                         }
                         .font(.aicovenBodySmall)
-                        .foregroundColor(Color(hex: "#00D5BE"))
+                        .foregroundColor(.aicovenTeal)
                         .buttonStyle(.plain)
+                        .padding(.top, Spacing.sm)
                     }
-                    .padding(.bottom, Spacing.xl)
+                    .frame(maxWidth: 500)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 40)
                 }
-                .padding(.horizontal, Spacing.lg)
-                .padding(.top, Spacing.lg)
-                .background(Color(hex: "#101828"))
+                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -514,76 +532,6 @@ private extension LoginView {
         }
     }
 
-    var signupHero: some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color(hex: "#101828"),
-                    Color(hex: "#1E2939"),
-                    Color(hex: "#101828")
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            LinearGradient(
-                colors: [
-                    Color(hex: "#009689").opacity(0.35),
-                    Color(hex: "#9810FA").opacity(0.35),
-                    Color(hex: "#E60076").opacity(0.35)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            VStack(spacing: Spacing.sm) {
-                if let iconImage = loadAppIcon() {
-                    #if os(iOS)
-                    Image(uiImage: iconImage)
-                        .resizable()
-                        .frame(width: 80, height: 80)
-                        .cornerRadius(16)
-                    #elseif os(macOS)
-                    Image(nsImage: iconImage)
-                        .resizable()
-                        .frame(width: 80, height: 80)
-                        .cornerRadius(16)
-                    #endif
-                } else {
-                    appIconFallback
-                }
-
-                Text("AICoven")
-                    .font(.system(size: 36, weight: .bold))
-                    .foregroundColor(.white)
-
-                Text("Technology so advanced, it feels like magic.")
-                    .font(.aicovenBody)
-                    .italic()
-                    .foregroundColor(Color(hex: "#46ECD5"))
-
-                Text("Orchestrate every model. Preserve every memory.")
-                    .font(.aicovenBodySmall)
-                    .foregroundColor(Color(hex: "#99A1AF"))
-            }
-            .padding(.top, Spacing.xl)
-            .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 286)
-    }
-
-    var signupStepper: some View {
-        HStack(spacing: Spacing.xs) {
-            SignupStepIndicator(number: "1", title: "Account", isActive: true)
-            SignupStepperConnector()
-            SignupStepIndicator(number: "2", title: "Privacy", isActive: false)
-            SignupStepperConnector()
-            SignupStepIndicator(number: "3", title: "Keys", isActive: false)
-            SignupStepperConnector()
-            SignupStepIndicator(number: "4", title: "Complete", isActive: false)
-        }
-        .frame(maxWidth: .infinity)
-    }
 }
 
 private struct SignupTextField: View {
@@ -633,42 +581,9 @@ private struct SignupTextField: View {
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.sm)
-            .background(Color(hex: "#1E2939"))
-            .cornerRadius(10)
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Color(hex: "#364153"), lineWidth: 1)
-            )
+            .background(Color.aicovenGlass)
+            .cornerRadius(BorderRadius.md)
         }
-    }
-}
-
-private struct SignupStepIndicator: View {
-    let number: String
-    let title: String
-    let isActive: Bool
-
-    var body: some View {
-        VStack(spacing: Spacing.xs) {
-            ZStack {
-                Circle()
-                    .fill(isActive ? Color(hex: "#009689") : Color(hex: "#1E2939"))
-                    .frame(width: 40, height: 40)
-                    .overlay(
-                        Circle()
-                            .strokeBorder(isActive ? Color(hex: "#009689") : Color(hex: "#364153"), lineWidth: 1)
-                    )
-
-                Text(number)
-                    .font(.aicovenBodyMedium)
-                    .foregroundColor(isActive ? .white : Color(hex: "#6A7282"))
-            }
-
-            Text(title)
-                .font(.aicovenCaption)
-                .foregroundColor(isActive ? .aicovenTextPrimary : Color(hex: "#4A5565"))
-        }
-        .frame(maxWidth: .infinity)
     }
 }
 
@@ -736,13 +651,6 @@ private extension String {
     }
 }
 
-private struct SignupStepperConnector: View {
-    var body: some View {
-        RoundedRectangle(cornerRadius: 4)
-            .fill(Color(hex: "#1E2939"))
-            .frame(width: 24, height: 2)
-    }
-}
 #Preview {
     LoginView()
         .environmentObject(AuthService.shared)
