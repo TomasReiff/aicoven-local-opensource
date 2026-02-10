@@ -159,6 +159,42 @@ For a complete documentation index, see [`docs/README.md`](docs/README.md).
 5. Build & run.
 6. In the app, open Settings → Provider Keys and add your own API keys (e.g. OpenAI, Anthropic, Gemini). The app will then route LLM and embedding calls through those providers.
 
+## Development Workflow
+
+### CI (GitHub Actions)
+
+CI runs automatically on:
+- **Pull requests** to `main` or `dev` branches
+- **Pushes** to `main` or `dev` branches
+
+The CI pipeline:
+1. Runs SwiftFormat (check mode)
+2. Runs SwiftLint (strict mode)
+3. Builds the project (Debug, macOS)
+4. Runs tests (if configured in the test plan)
+
+### Pre-commit Hook (Local Testing)
+
+To run linting checks automatically before each commit, set up the git hook:
+
+```bash
+./scripts/setup-hooks.sh
+```
+
+This installs a pre-commit hook that runs SwiftFormat and SwiftLint on staged Swift files. To skip the hook temporarily:
+
+```bash
+git commit --no-verify
+```
+
+### Full Lint/Build/Test
+
+For a complete local check (matching CI):
+
+```bash
+./scripts/lint.sh
+```
+
 ## Contributing
 
 This project is licensed under the **PolyForm Noncommercial License 1.0.0** (see `LICENSE`). This means you may copy, modify, and distribute the software for **noncommercial purposes only**. Issues and PRs are welcome.

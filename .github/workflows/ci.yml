@@ -1,0 +1,96 @@
+# CI workflow for AICoven Local
+# Runs on pull requests and pushes to main/dev branches
+# Executes linting, building, and testing
+
+name: CI
+
+on:
+  # Run on all pull requests
+  pull_request:
+    branches:
+      - main
+      - dev
+    paths:
+      - 'swift/**'
+      - 'scripts/**'
+      - '.github/workflows/ci.yml'
+      - '.swiftlint.yml'
+
+  # Run on pushes to main branches
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - 'swift/**'
+      - 'scripts/**'
+      - '.github/workflows/ci.yml'
+      - '.swiftlint.yml'
+
+  # Allow manual triggering
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-build-test:
+    name: Lint, Build & Test
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Install SwiftFormat
+        run: brew install swiftformat
+
+      - name: Run SwiftFormat (check mode)
+        run: |
+          # Run swiftformat in lint mode to check for formatting issues
+          swiftformat swift/AICoven --lint || {
+            echo "::error::SwiftFormat found formatting issues. Run 'swiftformat swift/AICoven' locally to fix."
+            exit 1
+          }
+
+      - name: Run SwiftLint
+        run: swiftlint --strict
+
+      - name: Build AICoven (Debug)
+        run: |
+          # Build the project without code signing for CI
+          xcodebuild \
+            -project "swift/AICoven/AICoven Local.xcodeproj" \
+            -scheme AICoven \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Run Tests
+        run: |
+          # Run tests if the test plan has configured targets
+          PLAN_PATH="swift/AICoven/AICovenTests/AICoven.xctestplan"
+          if [[ -f "$PLAN_PATH" && $(grep -c '"target"' "$PLAN_PATH") -gt 0 ]]; then
+            echo "Running AICoven tests..."
+            xcodebuild \
+              -project "swift/AICoven/AICoven Local.xcodeproj" \
+              -scheme AICoven \
+              -configuration Debug \
+              -destination 'platform=macOS' \
+              CODE_SIGNING_ALLOWED=NO \
+              test
+          else
+            echo "No XCTest targets configured in test plan; skipping tests."
+          fi
