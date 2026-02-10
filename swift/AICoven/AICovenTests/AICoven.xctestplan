@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "131488E0-5D11-4132-A042-14F209609344",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:AICoven Local.xcodeproj",
+        "identifier" : "BEE115E62F323697002A6499",
+        "name" : "AICovenTests"
+      }
+    }
+  ],
+  "version" : 1
+}

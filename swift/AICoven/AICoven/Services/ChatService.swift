@@ -1,0 +1,1334 @@
+import Foundation
+
+/// Task from an agent's planning scratchpad
+struct AgentTask: Identifiable, Codable, Equatable {
+    let id: String
+    let title: String
+    var completed: Bool
+    
+    enum CodingKeys: String, CodingKey {
+        case id, title, completed
+    }
+}
+
+/// Message model for chat
+struct ChatMessage: Codable, Identifiable, Hashable {
+    let id: String
+    let threadId: String
+    let role: String
+    let content: String
+    let metadata: [String: AnyJSONValue]?
+    let tokenUsage: TokenUsage?
+    let createdAt: Date?
+    let isEncrypted: Bool?
+    let keyFingerprint: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case threadId = "thread_id"
+        case role, content, metadata
+        case tokenUsage = "token_usage"
+        case createdAt = "created_at"
+        case isEncrypted = "is_encrypted"
+        case keyFingerprint = "key_fingerprint"
+    }
+    
+    // Memberwise init for decryption mapping
+    init(id: String, threadId: String, role: String, content: String, metadata: [String: AnyJSONValue]?, tokenUsage: TokenUsage?, createdAt: Date?, isEncrypted: Bool?, keyFingerprint: String?) {
+        self.id = id
+        self.threadId = threadId
+        self.role = role
+        self.content = content
+        self.metadata = metadata
+        self.tokenUsage = tokenUsage
+        self.createdAt = createdAt
+        self.isEncrypted = isEncrypted
+        self.keyFingerprint = keyFingerprint
+    }
+}
+
+/// Token usage information
+struct TokenUsage: Codable, Hashable {
+    let promptTokens: Int?
+    let completionTokens: Int?
+    let totalTokens: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case promptTokens = "prompt_tokens"
+        case completionTokens = "completion_tokens"
+        case totalTokens = "total_tokens"
+    }
+}
+
+/// Event from the /chat/stream SSE endpoint
+///
+/// The backend may emit different event types:
+/// - "metadata": initial provider/model info
+/// - "delta": streamed text chunks (with optional `phase`)
+/// - "thought": parsed <thought> blocks
+/// - "tool_call": tool invocation (name + args)
+/// - "tool_result": tool execution results
+/// - "memory_proposal": memory write proposals
+/// - "done": final completion marker (includes provider/model/token_usage)
+struct ChatStreamEvent: Decodable {
+    let type: String
+    let content: String?
+    let phase: String?
+    let provider: String?
+    let model: String?
+    let messageId: String?
+    let tokenUsage: TokenUsage?
+    // Optional fields for tool events
+    let name: String?
+    let args: [String: AnyJSONValue]?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case content
+        case phase
+        case provider
+        case model
+        case messageId = "message_id"
+        case tokenUsage = "token_usage"
+        case name
+        case args
+    }
+}
+
+
+// MARK: - Tool Intent Decision
+
+/// Result of the heuristic intent gate that decides whether a user message
+/// needs tool calls before the model sees tool instructions.
+enum ToolIntentDecision {
+    /// The message is clearly conversational; skip the tool loop entirely.
+    case noTools(reason: String)
+    /// The message likely needs tools (search, file ops, etc.).
+    case useTools(suggested: [String])
+    /// Ambiguous — fall through to the LLM with tool instructions.
+    case ambiguous
+
+    /// Heuristic fast-path: classify a user message without an LLM call.
+    /// Returns `.noTools` for obviously conversational requests and
+    /// `.useTools` for obvious tool requests; `.ambiguous` otherwise.
+    static func heuristic(for message: String) -> ToolIntentDecision {
+        let lower = message.lowercased()
+
+        // Obvious no-tool patterns (conversational, opinion, summarization)
+        let noToolPatterns = [
+            "give me a proposal", "explain", "summarize", "what do you think",
+            "review this", "help me understand", "tell me about",
+            "what is", "what are", "how does", "how do",
+            "can you describe", "opinion on", "compare",
+            "write me", "draft", "rewrite", "translate",
+            "hello", "hi ", "hey ", "thanks", "thank you"
+        ]
+        if noToolPatterns.contains(where: { lower.contains($0) }) {
+            return .noTools(reason: "Heuristic: conversational/opinion/writing request")
+        }
+
+        // Obvious tool patterns (web search, file ops, github, time)
+        let toolPatterns = [
+            "search for", "look up", "find on github", "google",
+            "what's the weather", "weather in", "current weather",
+            "read file", "write file", "list files",
+            "run command", "execute", "shell",
+            "what time", "current time", "what date",
+            "open the url", "browse", "fetch",
+            "github.com", "create a pr", "pull request",
+            "create branch", "list repos"
+        ]
+        if toolPatterns.contains(where: { lower.contains($0) }) {
+            return .useTools(suggested: [])
+        }
+
+        return .ambiguous
+    }
+}
+
+/// Service for chat and message API calls
+actor ChatService {
+    /// Shared singleton using the core LLM router + context builder. The
+    /// environment is filtered to providers that actually have API keys
+    /// configured via ProviderKeysView / ProviderAccountService.
+    static let shared: ChatService = {
+        let env = LLMConfiguration.makeEnvironment()
+        return ChatService(
+            contextBuilder: ContextBuilder(),
+            modelRouter: HeuristicModelRouter(availableModels: env.models),
+            llmClients: env.clients,
+            threadStore: ThreadRepository.shared,
+            toolService: ToolService.shared
+        )
+    }()
+    
+    private let contextBuilder: ContextBuilder
+    private var modelRouter: ModelRouter
+    private var llmClients: [String: LLMClient]
+    /// Abstraction over thread persistence so chat logic does not depend on
+    /// the concrete GRDB repository.
+    private let threadStore: ThreadStore
+    /// Tool facade used by chat for web search and time; injected for tests.
+    private let toolService: ChatToolService
+    /// Whether ChatService should automatically refresh its LLM environment
+    /// from ProviderAccountService on each call. Tests can disable this to
+    /// keep injected mock clients and routers.
+    private let shouldAutoRefreshEnvironment: Bool
+    
+    /// In-memory local message store keyed by thread ID. This gives us basic
+    /// per-thread history for contextual chat without any backend.
+    private var messageStore: [String: [ChatMessage]] = [:]
+    /// Maximum number of prior turns to include when building LLM context.
+    private let maxContextMessages = 20
+    /// On-disk cache location for message history so threads survive restarts.
+    private let messageStoreURL: URL = {
+        let fm = FileManager.default
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fm.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dir = base.appendingPathComponent("AICovenOpen", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("messages.json", isDirectory: false)
+    }()
+    /// Whether we've attempted to hydrate the in-memory store from disk.
+    private var hasLoadedFromDisk = false
+    
+    init(contextBuilder: ContextBuilder,
+         modelRouter: ModelRouter,
+         llmClients: [String: LLMClient],
+         threadStore: ThreadStore,
+         toolService: ChatToolService,
+         shouldAutoRefreshEnvironment: Bool = true) {
+        self.contextBuilder = contextBuilder
+        self.modelRouter = modelRouter
+        self.llmClients = llmClients
+        self.threadStore = threadStore
+        self.toolService = toolService
+        self.shouldAutoRefreshEnvironment = shouldAutoRefreshEnvironment
+    }
+    
+    /// Ensure that we have an up-to-date LLM environment based on the latest
+    /// provider keys in UserDefaults and the live model lists returned by each
+    /// provider. This is important because `ChatService` is initialized once at
+    /// app launch; users may add or remove keys later.
+    private func ensureEnvironment() async {
+        guard shouldAutoRefreshEnvironment else { return }
+
+        // Rebuild the client map from the latest cached API keys.
+        let env = LLMConfiguration.makeEnvironment()
+        self.llmClients = env.clients
+
+        do {
+            // Build dynamic model descriptors from live ListModels responses for
+            // all configured provider accounts.
+            let allDescriptors = try await ProviderAccountService.shared.loadAllModelDescriptors()
+            // Only keep descriptors for providers we actually have clients for.
+            let allowed = Set(llmClients.keys)
+            let models = allDescriptors.filter { allowed.contains($0.providerID) }
+            self.modelRouter = HeuristicModelRouter(availableModels: models)
+        } catch {
+            AppErrorReporter.log(error: error, context: "ChatService.ensureEnvironment.loadModelDescriptors")
+            self.modelRouter = HeuristicModelRouter(availableModels: [])
+        }
+    }
+    
+    // MARK: - Local message store (memory + disk)
+    
+    /// Append a message to the local in-memory history for its thread and
+    /// persist the updated store to disk.
+    func addLocalMessage(_ message: ChatMessage) {
+        var messages = messageStore[message.threadId] ?? []
+        messages.append(message)
+        messageStore[message.threadId] = messages
+        saveMessageStoreToDisk()
+    }
+    
+    /// Ensure the in-memory message store is hydrated from disk at most once.
+    private func ensureLoadedFromDisk() {
+        guard !hasLoadedFromDisk else { return }
+        hasLoadedFromDisk = true
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: messageStoreURL.path) else { return }
+        do {
+            let data = try Data(contentsOf: messageStoreURL)
+            let decoded = try JSONDecoder().decode([String: [ChatMessage]].self, from: data)
+            messageStore = decoded
+        } catch {
+            AppErrorReporter.log(error: error, context: "ChatService.ensureLoadedFromDisk")
+        }
+    }
+    
+    /// Persist the current in-memory message store to disk.
+    private func saveMessageStoreToDisk() {
+        do {
+            let data = try JSONEncoder().encode(messageStore)
+            try data.write(to: messageStoreURL, options: .atomic)
+        } catch {
+            AppErrorReporter.log(error: error, context: "ChatService.saveMessageStoreToDisk")
+        }
+    }
+    
+    /// Load messages for a thread
+    /// - Parameters:
+    ///   - threadId: The thread ID
+    ///   - limit: Maximum number of messages to load
+    ///   - before: Load messages before this message ID
+    /// - Returns: List of messages
+    func loadMessages(threadId: String, limit: Int = 1000, before: String? = nil) async throws -> [ChatMessage] {
+        ensureLoadedFromDisk()
+        let all = messageStore[threadId] ?? []
+        guard !all.isEmpty else { return [] }
+        
+        // Messages are stored in ascending order (oldest first). We support
+        // simple pagination using the optional `before` message ID.
+        if let beforeId = before, let idx = all.firstIndex(where: { $0.id == beforeId }) {
+            let end = idx
+            let start = max(0, end - limit)
+            return Array(all[start..<end])
+        } else {
+            let end = all.count
+            let start = max(0, end - limit)
+            return Array(all[start..<end])
+        }
+    }
+    
+    /// Send a message and get AI response (non-streaming)
+    /// - Parameters:
+    ///   - threadId: The thread ID
+    ///   - message: User message content
+    ///   - roleId: AI role/agent ID (optional)
+    ///   - providerAccountId: Provider account to use (optional)
+    ///   - attachmentIds: File attachment IDs (optional)
+    /// - Returns: The AI response message
+    func sendMessage(
+        threadId: String,
+        message: String,
+        roleId: String? = nil,
+        providerAccountId: String? = nil,
+        attachmentIds: [String]? = nil
+    ) async throws -> ChatResponse {
+        // Local-only open source client: non-streaming chat against the
+        // legacy backend is not supported. For now, return a simple
+        // placeholder response so call sites don't crash.
+        AppErrorReporter.log(message: "sendMessage called in local-only build – returning placeholder response.", context: "ChatService.sendMessage")
+        return ChatResponse(
+            messageId: UUID().uuidString,
+            content: "This local AICoven Local build does not yet support non-streaming chat.",
+            role: "assistant",
+            provider: "local",
+            model: nil,
+            tokenUsage: nil,
+            memoryProposals: [],
+            thoughts: nil,
+            toolCalls: nil,
+            metadata: [:]
+        )
+    }
+    
+    /// Stream a message using the local LLM client and surface planning/answer phases.
+    ///
+    /// This uses non-streaming provider SDKs under the hood but can perform a
+    /// small tool-calling loop (web_search, current_time) before returning the
+    /// final natural-language answer. The loop follows the same JSON protocol
+    /// as AgentRunner so models can decide when to call tools.
+    func streamMessage(
+        threadId: String,
+        message: String,
+        roleId: String? = nil,
+        providerAccountId: String? = nil,
+        attachmentIds: [String]? = nil,
+        onPlanningDelta: @escaping (String) -> Void,
+        onToolEvent: @escaping (String) -> Void,
+        onAnswerDelta: @escaping (String) -> Void,
+        onDone: @escaping (_ provider: String?, _ model: String?, _ tokenUsage: TokenUsage?) -> Void
+    ) async throws {
+        // Ensure we see any provider keys and live model lists that may have
+        // been added or changed after ChatService was first initialized.
+        await ensureEnvironment()
+        
+        // Try to honour the user's preferred provider + model from Strix
+        // settings (stored in UserDefaults by StrixSettingsService). If the
+        // router's dynamic model list contains an exact match, use it;
+        // otherwise fall back to the heuristic cost-class routing.
+        let (prefProvider, prefModel) = resolveProviderAndModel()
+        let descriptor: ModelDescriptor
+        let client: LLMClient
+
+        if let prefClient = llmClients[prefProvider],
+           let match = modelRouter.findExact(providerID: prefProvider, modelID: prefModel) {
+            descriptor = match
+            client = prefClient
+        } else {
+            // Fall back to heuristic routing.
+            let routingContext = RoutingContext(task: .chat,
+                                                requireLocalOnly: false,
+                                                requireLongContext: false,
+                                                preferHighQuality: true)
+            guard let fallbackDescriptor = modelRouter.route(for: routingContext),
+                  let fallbackClient = llmClients[fallbackDescriptor.providerID] else {
+                let msg = "No configured providers/models available for chat. Add provider keys in Settings."
+                onPlanningDelta("")
+                onAnswerDelta(msg)
+                onDone(nil, nil, nil)
+                return
+            }
+            descriptor = fallbackDescriptor
+            client = fallbackClient
+        }
+        
+        // Give the UI an immediate hint that we're contacting the provider.
+        onPlanningDelta("Thinking about your question…")
+
+        // Intent gate: decide whether this message needs tools at all.
+        // This prevents unnecessary tool loops for conversational requests
+        // and avoids injecting tool protocol instructions that cause the
+        // model to regurgitate its own rules.
+        let intent = ToolIntentDecision.heuristic(for: message)
+        let toolsAllowed: Bool
+        switch intent {
+        case .noTools(let reason):
+            #if DEBUG
+            AppErrorReporter.log(message: "Intent gate: skipping tools — \(reason)", context: "ChatService.streamMessage.intentGate")
+            #endif
+            toolsAllowed = false
+        case .useTools:
+            toolsAllowed = true
+        case .ambiguous:
+            // For ambiguous messages, allow tools but the model decides.
+            toolsAllowed = true
+        }
+        
+        // Simple tool loop: allow the model a configurable number of tool
+        // invocations before we require a natural-language answer. The
+        // `chat_max_tool_steps` budget controls how many *tool calls* are
+        // allowed; the user always gets a final answer attempt even if the
+        // budget is exhausted.
+        let maxToolSteps = toolsAllowed ? max(0, Self.currentMaxToolSteps()) : 0
+        var remainingToolSteps = maxToolSteps
+        #if DEBUG
+        AppErrorReporter.log(message: "streamMessage starting: provider=\(descriptor.providerID) model=\(descriptor.modelID) maxToolSteps=\(maxToolSteps) toolsAllowed=\(toolsAllowed)", context: "ChatService.streamMessage")
+        #endif
+        var toolContextLog = ""
+        var finalText: String?
+        var finalUsage: TokenUsage?
+
+        // ── Context-aware repeat detection (ported from backend) ──────────
+        // Tracks tool-call signatures across loop iterations so we can
+        // detect the model calling the exact same tool with the same args
+        // in consecutive steps *without* the context changing between calls.
+        // Format: signature → [(stepNumber, contextHash)]
+        var toolCallHistory: [String: [(step: Int, contextHash: String)]] = [:]
+        let maxConsecutiveSameCalls = 2
+        var stepNumber = 0
+
+        // ── Continuation prompts (ported from backend) ───────────────────
+        // When the model says "I'll now do X" but forgets to call a tool,
+        // we inject a nudge prompt up to this many times before giving up.
+        var continuationCount = 0
+        let maxContinuationPrompts = 2
+
+        // ── Tool result compression threshold ────────────────────────────
+        // Once toolContextLog exceeds this length (chars), older results
+        // are truncated to prevent context overflow.
+        let toolContextCompressThreshold = 3000
+
+        // Track initial message sent
+        AnalyticsService.shared.trackMessageSent(threadId: threadId, hasAttachments: !(attachmentIds?.isEmpty ?? true), attachmentCount: attachmentIds?.count ?? 0)
+        
+        // First phase: while we still have tool budget, let the model decide
+        // whether to call a tool. Each successful tool invocation consumes one
+        // step from the budget; a direct natural-language reply ends the loop.
+        while remainingToolSteps > 0 && finalText == nil {
+            stepNumber += 1
+            // Build the effective user message. Only append tool protocol
+            // instructions when tools are allowed — the system prompt from
+            // ContextBuilder already includes full tool documentation, so
+            // appending here too caused double-injection and prompt
+            // regurgitation.
+            var composedUserMessage = message
+            if !toolContextLog.isEmpty {
+                // When we have accumulated tool results, include a brief
+                // instruction so the model knows to incorporate them.
+                composedUserMessage += "\n\nYou have tool results below. Use them to answer the user's question. If you need more information, call another tool. Otherwise, provide your final answer in natural language.\n\n" + toolContextLog
+            }
+            
+            // Build LLM context using the shared ContextBuilder, which will pull
+            // in runtime info, policies, memories, and recent turns for this
+            // thread. We respect the model's max context tokens with a safety
+            // margin.
+            let promptBudget = Int(Double(descriptor.maxContextTokens) * 0.8)
+            let contextMessages = try await contextBuilder.buildContext(
+                threadID: threadId,
+                userMessage: composedUserMessage,
+                maxContextTokens: promptBudget,
+                toolConfig: .allTools
+            )
+            
+            do {
+                let options = ChatOptions(temperature: 0.7, maxTokens: nil, stream: false)
+                let response = try await client.completeChat(messages: contextMessages,
+                                                             model: descriptor.modelID,
+                                                             options: options)
+                let rawText = response.message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                #if DEBUG
+                AppErrorReporter.log(message: "provider response (tool phase, truncated): \(rawText.prefix(200))", context: "ChatService.streamMessage.toolLoop")
+                #endif
+                let usage = response.usage.map { core in
+                    TokenUsage(promptTokens: core.promptTokens,
+                               completionTokens: core.completionTokens,
+                               totalTokens: core.totalTokens)
+                }
+                finalUsage = usage
+                
+                // Try to interpret the output as a tool call JSON payload.
+                if let toolCall = ChatToolInvocation.from(jsonString: rawText) {
+                    // ── Context-aware repeat detection ────────────────────
+                    // Build a stable signature from the tool name + normalized args.
+                    let rawInput = extractToolInputString(from: toolCall.input) ?? ""
+                    let normalizedInputForSignature = Self.normalizeForDedupe(rawInput)
+                    let signature = "\(toolCall.tool.lowercased())|\(normalizedInputForSignature)"
+
+                    // Hash the current accumulated context so we can tell
+                    // whether anything changed between repeated calls.
+                    let contextHash = Self.computeContextHash(toolContextLog)
+
+                    // Record this call with its step number and context hash.
+                    toolCallHistory[signature, default: []].append((step: stepNumber, contextHash: contextHash))
+
+                    // Check for N consecutive steps with the same call AND
+                    // unchanged context (ported from backend).
+                    let history = toolCallHistory[signature]!
+                    if history.count >= maxConsecutiveSameCalls {
+                        let recent = Array(history.suffix(maxConsecutiveSameCalls))
+                        let isConsecutive = recent.count == maxConsecutiveSameCalls
+                            && (1..<recent.count).allSatisfy { recent[$0].step == recent[$0 - 1].step + 1 }
+                        let contextUnchanged = Set(recent.map(\.contextHash)).count == 1
+
+                        if isConsecutive && contextUnchanged {
+                            #if DEBUG
+                            AppErrorReporter.log(
+                                message: "Repeat loop detected: \(toolCall.tool) called \(maxConsecutiveSameCalls)x with unchanged context. Breaking.",
+                                context: "ChatService.streamMessage.repeatDetection"
+                            )
+                            #endif
+                            let explanation = "I called tools several times but still couldn't finish this request reliably. Please try rephrasing or simplifying the request, or use a dedicated service if you need precise real-time data."
+                            finalText = explanation
+                            break
+                        }
+                    }
+
+                    // Reset continuation counter when the model makes progress
+                    continuationCount = 0
+                    
+                    #if DEBUG
+                    AppErrorReporter.log(message: "Parsed chat tool call: \(toolCall.tool) (remaining before decrement=\(remainingToolSteps))", context: "ChatService.streamMessage.toolLoop")
+                    #endif
+                    // We only honor tool calls while there is remaining budget.
+                    remainingToolSteps -= 1
+                    
+                    // Track tool usage
+                    AnalyticsService.shared.trackToolUsed(toolName: toolCall.tool, threadId: threadId)
+                    
+                    let (summary, contextBlock) = try await executeChatToolCall(toolCall)
+                    onToolEvent(summary)
+                    if let block = contextBlock {
+                        if toolContextLog.isEmpty {
+                            toolContextLog = block
+                        } else {
+                            toolContextLog += "\n\n" + block
+                        }
+                    }
+
+                    // ── Tool result compression ──────────────────────────
+                    // Prevent context overflow when many tool steps run.
+                    if toolContextLog.count > toolContextCompressThreshold {
+                        let keep = toolContextCompressThreshold / 2
+                        let suffix = String(toolContextLog.suffix(keep))
+                        toolContextLog = "... (older tool results truncated)\n\n" + suffix
+                    }
+                    // Loop again with updated tool context.
+                    continue
+                } else {
+                    // If the model refused to answer a weather question without
+                    // using tools, optionally force a single web_search call.
+                    // This is behind a feature flag (default OFF) because it
+                    // overrides the model's own decision and can contribute to
+                    // unexpected tool loops.
+                    let forceSearchEnabled = UserDefaults.standard.bool(forKey: "force_search_enabled")
+                    if forceSearchEnabled,
+                       remainingToolSteps > 0,
+                       let forcedQuery = maybeForceSearchQuery(userMessage: message, modelReply: rawText) {
+                        let inputDict: [String: AnyJSONValue] = ["query": AnyJSONValue(forcedQuery)]
+                        let forcedCall = ChatToolInvocation(
+                            tool: "web_search",
+                            input: AnyJSONValue(inputDict),
+                            reason: "User asked for current weather; previous reply said I cannot answer, but I can search the web."
+                        )
+                        let normalizedInputForSignature = Self.normalizeForDedupe(forcedQuery)
+                        let signature = "web_search|\(normalizedInputForSignature)"
+                        let ctxHash = Self.computeContextHash(toolContextLog)
+                        toolCallHistory[signature, default: []].append((step: stepNumber, contextHash: ctxHash))
+                        remainingToolSteps -= 1
+                        
+                        // Track tool usage
+                        AnalyticsService.shared.trackToolUsed(toolName: "web_search", threadId: threadId)
+                        
+                        let (summary, contextBlock) = try await executeChatToolCall(forcedCall)
+                        onToolEvent(summary)
+                        if let block = contextBlock {
+                            if toolContextLog.isEmpty {
+                                toolContextLog = block
+                            } else {
+                                toolContextLog += "\n\n" + block
+                            }
+                        }
+                        // Loop again with updated tool context.
+                        continue
+                    }
+                    // ── Malformed tool output detection ──────────────────
+                    // If the response has broken tool markup that didn't
+                    // parse, treat it as a final answer rather than looping.
+                    if Self.detectMalformedToolOutput(rawText) {
+                        #if DEBUG
+                        AppErrorReporter.log(message: "Malformed tool output detected; treating cleaned text as final answer.", context: "ChatService.streamMessage.malformed")
+                        #endif
+                        finalText = Self.stripToolMarkup(rawText)
+                        break
+                    }
+
+                    // ── Premature stop detection ─────────────────────────
+                    // If the model says "I'll now do X" but didn't call a
+                    // tool, nudge it to continue (up to max prompts).
+                    if continuationCount < maxContinuationPrompts,
+                       Self.detectPrematureStop(rawText, stepCount: stepNumber, maxSteps: maxToolSteps) {
+                        continuationCount += 1
+                        #if DEBUG
+                        AppErrorReporter.log(message: "Premature stop detected (\(continuationCount)/\(maxContinuationPrompts)); injecting continuation prompt.", context: "ChatService.streamMessage.continuation")
+                        #endif
+                        // Append the model's partial response and a nudge
+                        if !toolContextLog.isEmpty { toolContextLog += "\n\n" }
+                        toolContextLog += "[Assistant partial response]\n" + rawText
+                        toolContextLog += "\n\n[System] You indicated there is more work to do but didn't call any tools. Please continue with the next step. Use the appropriate tool to proceed."
+                        continue
+                    }
+
+                    // Treat this as the final natural-language answer.
+                    #if DEBUG
+                    AppErrorReporter.log(message: "No tool call detected in provider response; treating as final answer.", context: "ChatService.streamMessage.toolLoop")
+                    #endif
+                    finalText = rawText
+                    break
+                }
+            } catch {
+                let msg: String
+                let errorCode: String
+                if let localError = error as? LocalChatError {
+                    msg = localError.localizedDescription
+                    errorCode = localError.analyticsCode
+                } else {
+                    msg = error.localizedDescription
+                    errorCode = "unknown_error"
+                }
+                
+                // Track error with a low-cardinality code; avoid logging full
+                // user-visible error text into analytics.
+                AnalyticsService.shared.trackMessageError(threadId: threadId, errorType: errorCode)
+                
+                onPlanningDelta("")
+                onAnswerDelta("Error: \(msg)")
+                onDone(nil, nil, nil)
+                return
+            }
+        }
+        
+        // Second phase: if we used up the tool budget without the model ever
+        // producing a natural-language answer, give it one final, tool-free
+        // chance. On this last attempt we *always* treat the response as the
+        // answer (even if it contains JSON) so the user is never left hanging
+        // with a generic failure.
+        if finalText == nil {
+            // Final phase: no tool instructions — just ask the model to
+            // answer in natural language using whatever it already knows.
+            var composedUserMessage = message + "\n\nIMPORTANT: You must now answer the user directly in natural language. Do NOT call tools or return JSON. Provide the most helpful answer you can using your own reasoning and the information already available (including any tool results and your built-in knowledge). Do NOT say that you cannot answer because you cannot use tools or the web; instead, make your best effort to answer, even if it is an approximation, and clearly explain any uncertainty."
+            if !toolContextLog.isEmpty {
+                composedUserMessage += "\n\n" + toolContextLog
+            }
+            
+            let promptBudget = Int(Double(descriptor.maxContextTokens) * 0.8)
+            let contextMessages = try await contextBuilder.buildContext(
+                threadID: threadId,
+                userMessage: composedUserMessage,
+                maxContextTokens: promptBudget,
+                toolConfig: .allTools
+            )
+            
+            do {
+                let options = ChatOptions(temperature: 0.7, maxTokens: nil, stream: false)
+                let response = try await client.completeChat(messages: contextMessages,
+                                                             model: descriptor.modelID,
+                                                             options: options)
+                let rawText = response.message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                #if DEBUG
+                AppErrorReporter.log(message: "provider response (final phase, truncated): \(rawText.prefix(200))", context: "ChatService.streamMessage.finalPhase")
+                #endif
+                let usage = response.usage.map { core in
+                    TokenUsage(promptTokens: core.promptTokens,
+                               completionTokens: core.completionTokens,
+                               totalTokens: core.totalTokens)
+                }
+                finalUsage = usage
+                finalText = rawText
+            } catch {
+                let msg: String
+                let errorCode: String
+                if let localError = error as? LocalChatError {
+                    msg = localError.localizedDescription
+                    errorCode = localError.analyticsCode
+                } else {
+                    msg = error.localizedDescription
+                    errorCode = "unknown_error"
+                }
+                
+                // Track error with a low-cardinality code; avoid logging full
+                // user-visible error text into analytics.
+                AnalyticsService.shared.trackMessageError(threadId: threadId, errorType: errorCode)
+                
+                onPlanningDelta("")
+                onAnswerDelta("Error: \(msg)")
+                onDone(nil, nil, nil)
+                return
+            }
+        }
+        
+        // By this point we should always have some text for the user. As a
+        // final safeguard, fall back to a generic message if for some reason we
+        // still ended up without an answer.
+        let rawAnswer = finalText ?? "I wasn't able to finish this request after using tools. Please try rephrasing or asking a simpler version."
+        
+        // Parse the response to extract memory proposals and strip markup
+        // ── Response text deduplication (ported from backend) ────────────
+        // Strip duplicate paragraphs that the model sometimes produces.
+        let dedupedAnswer = Self.dedupeResponseText(rawAnswer)
+        let parseResult = ToolCallParser.parse(dedupedAnswer)
+        let answer = parseResult.strippedText.isEmpty ? rawAnswer : parseResult.strippedText
+        
+        // Process any memory proposals from the LLM
+        if !parseResult.memoryProposals.isEmpty {
+            for proposal in parseResult.memoryProposals {
+                // Auto-save memory proposals (scope can be "user" or "thread")
+                let effectiveScope = proposal.scope == "thread" ? "thread" : "user"
+                do {
+                    _ = try await MemoryService.shared.createMemory(
+                        covenId: nil,
+                        scope: effectiveScope,
+                        title: nil,
+                        content: proposal.content,
+                        tags: proposal.category.map { [$0] },
+                        isPinned: false
+                    )
+                    AppErrorReporter.log(message: "Saved memory proposal: scope=\(effectiveScope) content=\(proposal.content.prefix(50))...", context: "ChatService.streamMessage.memoryWrite")
+                } catch {
+                    AppErrorReporter.log(error: error, context: "ChatService.streamMessage.memoryWrite")
+                }
+            }
+        }
+        
+        AppErrorReporter.log(message: "streamMessage completed with answer length=\(answer.count) provider=\(descriptor.providerID) model=\(descriptor.modelID) usedTools=\(maxToolSteps - remainingToolSteps)", context: "ChatService.streamMessage")
+        onPlanningDelta("")
+        onAnswerDelta(answer)
+
+        // Persist a lightweight usage entry so the local Budgets & Usage
+        // dashboard can approximate spend per provider.
+        await UsageService.shared.recordLocalUsage(
+            provider: descriptor.providerID,
+            model: descriptor.modelID,
+            usage: finalUsage,
+            threadId: threadId
+        )
+
+        onDone(descriptor.providerID, descriptor.modelID, finalUsage)
+        
+        // Track message received. We don't currently measure precise
+        // end-to-end latency here, so omit response time instead of
+        // sending a misleading placeholder.
+        let totalTokens = finalUsage?.totalTokens ?? 0
+        AnalyticsService.shared.trackMessageReceived(
+            threadId: threadId,
+            provider: descriptor.providerID,
+            model: descriptor.modelID,
+            tokenCount: totalTokens
+        )
+    }
+
+    /// Recompute and persist a compact summary for the given thread using the
+    /// configured LLM providers. This runs independently of any one chat turn
+    /// and is safe to call opportunistically after new messages are added.
+    func updateThreadSummary(threadId: String) async {
+        // Ensure environment is ready before routing summarization calls.
+        await ensureEnvironment()
+        do {
+            // Use the same history seen by the chat UI.
+            let history = try await loadMessages(threadId: threadId, limit: maxContextMessages)
+            guard !history.isEmpty else { return }
+
+            var messages: [LLMMessage] = []
+            messages.append(
+                LLMMessage(
+                    role: .system,
+                    content: "You are summarizing a conversation so it can be used as context in future turns. " +
+                        "Write a concise summary in 3-6 bullet points focusing on key facts, decisions, and open questions."
+                )
+            )
+            for msg in history {
+                let role: LLMMessage.Role = (msg.role == "user") ? .user : .assistant
+                messages.append(LLMMessage(role: role, content: msg.content))
+            }
+
+            let routingContext = RoutingContext(task: .chat,
+                                                requireLocalOnly: false,
+                                                requireLongContext: false,
+                                                preferHighQuality: true)
+            guard let descriptor = modelRouter.route(for: routingContext),
+                  let client = llmClients[descriptor.providerID] else {
+                return
+            }
+
+            let options = ChatOptions(temperature: 0.2, maxTokens: nil, stream: false)
+            let response = try await client.completeChat(messages: messages,
+                                                         model: descriptor.modelID,
+                                                         options: options)
+            let summary = response.message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !summary.isEmpty else { return }
+
+            try await threadStore.updateSummary(forThreadID: threadId, summary: summary)
+        } catch {
+            // Thread summaries are an optional optimization. In the local-only
+            // client we treat *all* failures as non-fatal and skip logging to
+            // avoid noisy console output (network hiccups, provider errors,
+            // etc.). They can always be recomputed on a later turn.
+            if let nsError = error as NSError?,
+               nsError.domain == "DataEncryptionService",
+               nsError.code == -3 {
+                return
+            }
+            return
+        }
+    }
+
+    /// Resolve the current provider + model from simple local settings.
+    ///
+    /// This is a temporary shim until Strix + ProviderAccountService are fully
+    /// localized. It prefers explicit overrides in UserDefaults:
+    ///  - llm_provider: "openai" | "anthropic" | "google"
+    ///  - openai_model / anthropic_model / gemini_model
+    private func resolveProviderAndModel() -> (String, String) {
+        let provider = UserDefaults.standard.string(forKey: UserScope.scopedKey("llm_provider"))?.lowercased() ?? "openai"
+        switch provider {
+        case "anthropic":
+            let model = UserDefaults.standard.string(forKey: UserScope.scopedKey("anthropic_model")) ?? "claude-3-5-sonnet-20241022"
+            return ("anthropic", model)
+        case "google", "gemini":
+            let model = UserDefaults.standard.string(forKey: UserScope.scopedKey("gemini_model")) ?? "gemini-1.5-pro"
+            return ("google", model)
+        default:
+            let model = UserDefaults.standard.string(forKey: UserScope.scopedKey("openai_model")) ?? "gpt-4o"
+            return ("openai", model)
+        }
+    }
+
+    /// Human-readable label for a provider string.
+    private func providerLabel(for provider: String) -> String {
+        switch provider {
+        case "anthropic": return "Anthropic"
+        case "google": return "Google Gemini"
+        default: return "OpenAI"
+        }
+    }
+
+    /// Fetch the current Strix system prompt, if any, from local settings.
+    /// Errors are treated as "no system prompt" so chat continues gracefully.
+    private func currentSystemPrompt() async -> String? {
+        do {
+            let role = try await StrixSettingsService.shared.loadPersonalStrix()
+            return role.systemPrompt
+        } catch {
+            AppErrorReporter.log(error: error, context: "ChatService.currentSystemPrompt.loadPersonalStrix")
+            return nil
+        }
+    }
+}
+
+// MARK: - LocalChatError analytics helpers
+
+private extension LocalChatError {
+    /// Stable, low-cardinality error code for analytics.
+    var analyticsCode: String {
+        switch self {
+        case .missingOpenAIAPIKey:
+            return "missing_openai_api_key"
+        case .invalidResponse:
+            return "invalid_response"
+        }
+    }
+}
+
+// MARK: - Tool-calling helpers for chat
+
+/// Lightweight tool-call envelope used in the chat path. This mirrors the
+/// JSON protocol used by AgentRunner so models can reuse the same patterns.
+///
+/// NOTE: Some models emit `input` as a string ("query"), others as an object
+/// (e.g., `{}` or `{ "query": "..." }`). We decode it as `AnyJSONValue` and
+/// normalize to a string inside `executeChatToolCall` so that both shapes are
+/// supported.
+struct ChatToolInvocation: Codable {
+    let tool: String
+    let input: AnyJSONValue?
+    let reason: String?
+    
+    static func from(jsonString: String) -> ChatToolInvocation? {
+        let trimmed = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let decoder = JSONDecoder()
+        
+        // Fast path: whole string is a JSON object.
+        if trimmed.first == "{",
+           let data = trimmed.data(using: .utf8),
+           let call = try? decoder.decode(ChatToolInvocation.self, from: data) {
+            return call
+        }
+        
+        // Fallback 1: many models (especially Gemini) emit reasoning text
+        // followed by a JSON object that starts with {"tool": ...}. Try to
+        // locate a balanced {...} region beginning at that marker.
+        if let markerRange = trimmed.range(of: "{\"tool\"") {
+            if let call = extractAndDecodeJSON(from: trimmed, startingAt: markerRange.lowerBound, using: decoder) {
+                return call
+            }
+        }
+        
+        // Fallback 2: older formats may still have a JSON object at the end;
+        // attempt to parse the last {...} block in the string.
+        if let start = trimmed.lastIndex(of: "{"),
+           let end = trimmed.lastIndex(of: "}"),
+           start < end {
+            let range = start...end
+            let jsonSub = String(trimmed[range])
+            if let data = jsonSub.data(using: .utf8),
+               let call = try? decoder.decode(ChatToolInvocation.self, from: data) {
+                return call
+            }
+        }
+        
+        return nil
+    }
+    
+    /// Helper used by `from(jsonString:)` to slice out a balanced JSON object
+    /// starting at a given index and decode it into `ChatToolInvocation`.
+    private static func extractAndDecodeJSON(from text: String,
+                                             startingAt startIndex: String.Index,
+                                             using decoder: JSONDecoder) -> ChatToolInvocation? {
+        var depth = 0
+        var endIndex: String.Index?
+        var idx = startIndex
+        while idx < text.endIndex {
+            let ch = text[idx]
+            if ch == "{" {
+                depth += 1
+            } else if ch == "}" {
+                depth -= 1
+                if depth == 0 {
+                    endIndex = idx
+                    break
+                }
+            }
+            text.formIndex(after: &idx)
+        }
+        guard let end = endIndex else { return nil }
+        let jsonSub = String(text[startIndex...end])
+        if let data = jsonSub.data(using: .utf8),
+           let call = try? decoder.decode(ChatToolInvocation.self, from: data) {
+            return call
+        }
+        
+        // Best-effort fallback: some models may use single quotes instead of
+        // double quotes. Replace them and retry, accepting that this is not
+        // perfect but dramatically improves robustness.
+        let normalized = jsonSub.replacingOccurrences(of: "'", with: "\"")
+        if let data = normalized.data(using: .utf8),
+           let call = try? decoder.decode(ChatToolInvocation.self, from: data) {
+            return call
+        }
+        return nil
+    }
+}
+
+extension ChatService {
+    /// Generate tool instructions using PromptTemplates for the chat context.
+    /// This replaces the hardcoded chatToolInstruction with dynamic tool documentation.
+    static func generateChatToolInstruction(enabledTools: Set<String>) -> String {
+        // Generate a concise version for chat (full docs are in system prompt)
+        return """
+        You are the user's personal assistant. You can optionally call tools to
+        help answer their question when your built-in knowledge or the local
+        context sandwich is not enough.
+
+        Before calling a tool, first think about whether you can answer directly
+        using your own reasoning and the provided context. Only call a tool when
+        you genuinely need fresh external information.
+
+        \(PromptTemplates.toolProtocolInstructions)
+        """
+    }
+    
+    /// Legacy static instruction for backward compatibility.
+    static let chatToolInstruction: String = generateChatToolInstruction(enabledTools: PromptTemplates.allTools)
+    
+    /// Resolve the maximum number of tool steps to allow in a single chat
+    /// turn. This is configurable via UserDefaults under the key
+    /// "chat_max_tool_steps"; values <= 0 fall back to a sane default.
+    static func currentMaxToolSteps() -> Int {
+        let stored = UserDefaults.standard.integer(forKey: UserScope.scopedKey("chat_max_tool_steps"))
+        // Default to 5 tool steps for chat (conservative to prevent thrash);
+        // users can raise this in Strix / agent role settings. Hard cap at 15.
+        if stored <= 0 { return 5 }
+        return min(stored, 15)
+    }
+    
+    /// Execute a chat tool call using ToolExecutionService and return a short summary
+    /// plus an optional context block that can be fed back into the context sandwich.
+    /// This enhanced version routes through the central ToolExecutionService for all tools.
+    nonisolated func executeChatToolCall(_ call: ChatToolInvocation) async throws -> (summary: String, contextBlock: String?) {
+        // Convert ChatToolInvocation to ParsedToolCall for ToolExecutionService
+        var args: [String: AnyJSONValue] = [:]
+        if let input = call.input {
+            // Input can be a string or dict
+            if let dict = input.value as? [String: AnyJSONValue] {
+                args = dict
+            } else if let dict = input.value as? [String: Any] {
+                for (key, value) in dict {
+                    args[key] = AnyJSONValue(value)
+                }
+            } else if let str = input.value as? String {
+                // For web_search, put string in "query" key
+                args["query"] = AnyJSONValue(str)
+                args["input"] = AnyJSONValue(str)
+            }
+        }
+        
+        let parsedCall = ParsedToolCall(
+            name: call.tool,
+            args: args,
+            reason: call.reason
+        )
+        
+        // Execute via ToolExecutionService
+        let result = await ToolExecutionService.shared.execute(
+            toolCall: parsedCall,
+            agentType: "chat",  // Chat context uses "chat" agent type
+            threadID: nil
+        )
+        
+        // Convert ToolExecutionResult to summary/contextBlock format.
+        // Summaries are user-facing so use friendly descriptions.
+        if result.status == "ok" {
+            let summary = Self.friendlyToolSummary(for: call.tool)
+            return (summary, result.contextBlock)
+        } else if result.status == "denied" {
+            let message = result.error ?? "Permission denied"
+            let summary = "⚠️ \(Self.friendlyToolName(call.tool)): permission denied"
+            return (summary, "[Tool Permission Denied: \(result.tool)]\n\(message)")
+        } else {
+            // Error or validation error
+            let message = result.error ?? "Unknown error"
+            let summary = "⚠️ \(Self.friendlyToolName(call.tool)): error"
+            return (summary, "[Tool Error: \(result.tool)]\n\(message)")
+        }
+    }
+    
+    /// Execute a parsed tool call directly (used by enhanced streamMessage).
+    /// Returns a ToolExecutionResult for more detailed handling.
+    nonisolated func executeParsedToolCall(_ call: ParsedToolCall, threadID: String?) async -> ToolExecutionResult {
+        return await ToolExecutionService.shared.execute(
+            toolCall: call,
+            agentType: "chat",
+            threadID: threadID
+        )
+    }
+
+    /// Normalize a tool `input` field (which may be a string or an object) into
+    /// a best-effort string representation for tools like `web_search`.
+    nonisolated func extractToolInputString(from value: AnyJSONValue?) -> String? {
+        guard let value else { return nil }
+        let raw = value.value
+        if let s = raw as? String {
+            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if let dict = raw as? [String: AnyJSONValue] {
+            // Common patterns: { "query": "..." } or { "q": "..." }
+            if let q = dict["query"]?.value as? String ?? dict["q"]?.value as? String {
+                let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+        }
+        return nil
+    }
+
+    /// Heuristic: if the user asked about weather and the model replied that it
+    /// cannot provide current weather without actually calling tools, synthesize
+    /// a web_search query so we can still show search results.
+    nonisolated func maybeForceSearchQuery(userMessage: String, modelReply: String) -> String? {
+        let lowerUser = userMessage.lowercased()
+        let lowerReply = modelReply.lowercased()
+        guard lowerUser.contains("weather") else { return nil }
+        let refusalSnippets = [
+            "cannot tell you the current weather",
+            "cannot provide the current weather",
+            "do not have access to real-time weather",
+            "don\'t have access to real-time weather",
+            "do not have access to real time weather",
+            "don\'t have access to real time weather",
+            "cannot access real-time weather",
+            "cannot access real time weather"
+        ]
+        guard refusalSnippets.contains(where: { lowerReply.contains($0) }) else {
+            return nil
+        }
+        // Try to extract a simple "weather in X" style query; if we can't,
+        // fall back to the full user message.
+        if let range = lowerUser.range(of: "weather in ") {
+            let cityPart = userMessage[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !cityPart.isEmpty {
+                return "weather in \(cityPart)"
+            }
+        }
+        return userMessage
+    }
+
+    // MARK: - Tool Normalization & Friendly Names
+
+    /// Normalize a tool-input string for deduplication signatures.
+    /// Lowercases, collapses whitespace, and trims punctuation so the model
+    /// can't bypass deduplication with trivial formatting changes.
+    nonisolated static func normalizeForDedupe(_ raw: String) -> String {
+        raw.lowercased()
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .punctuationCharacters)
+    }
+
+    /// Human-readable name for a tool identifier, used in user-facing summaries.
+    nonisolated static func friendlyToolName(_ tool: String) -> String {
+        switch tool.lowercased() {
+        case "web_search":                          return "Web Search"
+        case "web_browse":                          return "Web Browse"
+        case "current_time":                        return "Current Time"
+        case "file.read":                           return "File Read"
+        case "file.write":                          return "File Write"
+        case "file.list":                           return "File List"
+        case "shell.execute":                       return "Shell Command"
+        case _ where tool.hasPrefix("github."):     return "GitHub"
+        case _ where tool.hasPrefix("google_drive"): return "Google Drive"
+        case _ where tool.hasPrefix("google_sheets"): return "Google Sheets"
+        default:                                    return tool
+        }
+    }
+
+    /// User-facing activity string emitted via `onToolEvent` while a tool runs.
+    nonisolated static func friendlyToolSummary(for tool: String) -> String {
+        switch tool.lowercased() {
+        case "web_search":          return "🔍 Searching the web…"
+        case "web_browse":          return "🌐 Reading webpage…"
+        case "current_time":        return "🕐 Checking current time…"
+        case "file.read":           return "📄 Reading file…"
+        case "file.write":          return "✍️ Writing file…"
+        case "file.list":           return "📂 Listing files…"
+        case "shell.execute":       return "💻 Running command…"
+        case _ where tool.hasPrefix("github."):      return "🐙 Working with GitHub…"
+        case _ where tool.hasPrefix("google_drive"): return "📁 Accessing Google Drive…"
+        case _ where tool.hasPrefix("google_sheets"): return "📊 Working with Sheets…"
+        default:                    return "⚙️ Using \(tool)…"
+        }
+    }
+
+    // MARK: - Context Hash (ported from backend _compute_context_hash)
+
+    /// Compute a short hash of the accumulated tool context so we can detect
+    /// whether anything meaningfully changed between consecutive identical
+    /// tool calls.
+    ///
+    /// The backend hashes the last 5 messages; here we hash `toolContextLog`
+    /// which serves the same role (accumulated tool results within a turn).
+    nonisolated static func computeContextHash(_ context: String) -> String {
+        // Use a simple hash of the last ~500 chars for efficiency.
+        let tail = context.isEmpty ? "" : String(context.suffix(500))
+        var hasher = Hasher()
+        hasher.combine(tail)
+        let hash = hasher.finalize()
+        return String(format: "%08x", abs(hash))
+    }
+
+    // MARK: - Response Text Deduplication (ported from backend _dedupe_response_text)
+
+    /// Remove duplicate paragraphs from an LLM response.
+    ///
+    /// Models sometimes repeat entire paragraphs, especially after
+    /// multi-step tool loops. This splits on double newlines, dedupes by
+    /// normalised content, and rejoins.
+    nonisolated static func dedupeResponseText(_ text: String) -> String {
+        guard !text.isEmpty else { return text }
+
+        let chunks = text.components(separatedBy: "\n\n")
+        var seen = Set<String>()
+        var deduped: [String] = []
+
+        for chunk in chunks {
+            let normalized = chunk.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !normalized.isEmpty else { continue }
+            if !seen.contains(normalized) {
+                seen.insert(normalized)
+                deduped.append(chunk)
+            }
+        }
+
+        return deduped.joined(separator: "\n\n")
+    }
+
+    // MARK: - Premature Stop Detection (ported from backend _detect_premature_stop)
+
+    /// Returns `true` if the model's response looks like it planned to
+    /// continue but forgot to call a tool — e.g. "I'll now search for…"
+    /// without an actual `<TOOL_CALL>` block.
+    ///
+    /// Only triggers when we still have step budget (`stepCount < maxSteps - 1`)
+    /// and the response isn't a clear final answer.
+    nonisolated static func detectPrematureStop(
+        _ responseText: String,
+        stepCount: Int,
+        maxSteps: Int
+    ) -> Bool {
+        guard !responseText.isEmpty else { return false }
+        // Don't continue if near the step limit.
+        guard stepCount < maxSteps - 1 else { return false }
+
+        let lower = responseText.lowercased()
+
+        // If it looks like a clear final answer, don't nudge.
+        let finalMarkers = [
+            "in summary", "to summarize", "in conclusion",
+            "based on my analysis", "based on my review",
+            "i have completed", "task is complete", "task complete",
+            "here's what i found", "here is what i found",
+            "unfortunately, i couldn't", "i wasn't able to",
+            "i couldn't find",
+        ]
+        for marker in finalMarkers where lower.contains(marker) {
+            return false
+        }
+
+        // Check for continuation phrases that suggest the model intended
+        // to keep going.
+        let continuationMarkers = [
+            "i'll now", "i will now",
+            "next, i'll", "next i'll",
+            "next, i will", "next i will",
+            "let me now", "now i'll", "now i will",
+            "the next step", "my next step",
+            "proceeding to",
+            "i need to also", "i should also",
+        ]
+        for marker in continuationMarkers where lower.contains(marker) {
+            return true
+        }
+
+        return false
+    }
+
+    // MARK: - Malformed Tool Output Detection (ported from backend _detect_malformed_tool_output)
+
+    /// Returns `true` if the response contains apparent tool-call markup
+    /// that couldn't be parsed — indicating the model mangled the format.
+    nonisolated static func detectMalformedToolOutput(_ responseText: String) -> Bool {
+        guard !responseText.isEmpty else { return false }
+
+        let lower = responseText.lowercased()
+
+        let toolMarkerCount = lower.components(separatedBy: "<tool_call>").count - 1
+            + lower.components(separatedBy: "[tool_call").count - 1
+            + lower.components(separatedBy: "functions.").count - 1
+
+        // Many markers but nothing parsed → malformed.
+        if toolMarkerCount >= 2 && !responseText.contains("{") {
+            return true
+        }
+
+        // Unclosed TOOL_CALL tags.
+        let openCount = lower.components(separatedBy: "<tool_call>").count - 1
+        let closeCount = lower.components(separatedBy: "</tool_call>").count - 1
+        if openCount > 0 && closeCount == 0 {
+            return true
+        }
+
+        // Multiple markers with no JSON objects at all.
+        if lower.contains("<tool_call>") && toolMarkerCount >= 3 && !responseText.contains("{") {
+            return true
+        }
+
+        return false
+    }
+
+    /// Strip broken tool-call markup from a response, leaving only the prose.
+    nonisolated static func stripToolMarkup(_ text: String) -> String {
+        var result = text
+        // Remove <TOOL_CALL>…</TOOL_CALL> blocks (case-insensitive).
+        while let openRange = result.range(of: "<tool_call>", options: .caseInsensitive),
+              let closeRange = result.range(of: "</tool_call>", options: .caseInsensitive),
+              openRange.lowerBound < closeRange.upperBound {
+            result.removeSubrange(openRange.lowerBound..<closeRange.upperBound)
+        }
+        // Remove any remaining unclosed <TOOL_CALL> tags.
+        result = result.replacingOccurrences(of: "<tool_call>", with: "", options: .caseInsensitive)
+        result = result.replacingOccurrences(of: "</tool_call>", with: "", options: .caseInsensitive)
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// Chat response from AI
+struct ChatResponse: Codable {
+    let messageId: String
+    let content: String
+    let role: String
+    let provider: String
+    let model: String?
+    let tokenUsage: TokenUsage?
+    let memoryProposals: [ChatMemoryProposal]
+    let thoughts: [String]?
+    let toolCalls: [ChatToolCall]?
+    let metadata: [String: AnyJSONValue]
+    
+    enum CodingKeys: String, CodingKey {
+        case messageId = "message_id"
+        case content, role, provider, model
+        case tokenUsage = "token_usage"
+        case memoryProposals = "memory_proposals"
+        case thoughts
+        case toolCalls = "tool_calls"
+        case metadata
+    }
+}
+
+/// Memory proposal from AI in chat responses (different from MemoryProposal in MemoryService)
+struct ChatMemoryProposal: Codable {
+    let content: String
+    let scope: String
+    let category: String?
+}
+
+/// Tool call from AI in chat responses
+struct ChatToolCall: Codable {
+    let name: String
+    let args: [String: AnyJSONValue]
+    let result: AnyJSONValue?  // Changed from String? to handle dict/any type
+    let error: String?
+    let status: String?
+}

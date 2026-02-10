@@ -1,0 +1,18 @@
+import XCTest
+import SwiftUI
+@testable import AICoven
+
+/// Simple smoke tests to ensure key SwiftUI views can be constructed.
+final class SwiftUIViewTests: XCTestCase {
+
+    func testHomeViewInitializes() {
+        let view = HomeView()
+        // Accessing the type erasure ensures the view compiles in tests.
+        _ = AnyView(view)
+    }
+
+    func testMainTabViewInitializes() {
+        let view = MainTabView()
+        _ = AnyView(view)
+    }
+}

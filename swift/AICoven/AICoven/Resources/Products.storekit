@@ -1,0 +1,114 @@
+{
+  "identifier" : "7D233E8A-1234-5678-9ABC-DEF012345678",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "creator_001",
+      "localizations" : [
+        {
+          "description" : "Covens, multiple agents & model customization",
+          "displayName" : "Creator",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.aicoven.creator",
+      "referenceName" : "Creator",
+      "type" : "NonConsumable"
+    },
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "toolspack_001",
+      "localizations" : [
+        {
+          "description" : "Shell, GitHub & Google Drive tools",
+          "displayName" : "Tools Pack",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.aicoven.toolspack",
+      "referenceName" : "Tools Pack",
+      "type" : "NonConsumable"
+    },
+    {
+      "displayPrice" : "14.99",
+      "familyShareable" : false,
+      "internalID" : "everything_001",
+      "localizations" : [
+        {
+          "description" : "All features, forever. Includes all future updates.",
+          "displayName" : "Everything Forever",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.aicoven.everything",
+      "referenceName" : "Everything Forever",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "1234567890",
+    "_developerTeamID" : "XXXXXXXXXX",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : "2026-02-10T00:00:00Z",
+    "_locale" : "en_US",
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Purchase"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Verification"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Store Sync"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Subscription Status"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Transaction"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Manage Subscriptions Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Offer Code Redeem Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Refund Request Sheet"
+      }
+    ]
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

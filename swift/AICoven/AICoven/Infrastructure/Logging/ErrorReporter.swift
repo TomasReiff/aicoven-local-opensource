@@ -1,0 +1,55 @@
+import Foundation
+import os.log
+
+/// Simple error reporting abstraction so services can log failures in a
+/// consistent way without depending directly on `print`.
+/// Marked Sendable since logging should be safe from any context.
+/// All methods are nonisolated to allow calling from any actor context.
+protocol ErrorReporter: Sendable {
+    nonisolated func log(error: Error, context: String)
+    nonisolated func log(message: String, context: String)
+}
+
+/// Default implementation that logs to the console using os.log for thread safety.
+/// This keeps behavior close to the existing logging while making it easy to
+/// swap in a different reporter (e.g. tests, analytics) later.
+struct ConsoleErrorReporter: ErrorReporter {
+    private let logger = Logger(subsystem: "dev.aicoven.app", category: "errors")
+    
+    nonisolated func log(error: Error, context: String) {
+        logger.error("⚠️ [\(context, privacy: .public)] \(error.localizedDescription, privacy: .public)")
+    }
+
+    nonisolated func log(message: String, context: String) {
+        logger.info("ℹ️ [\(context, privacy: .public)] \(message, privacy: .public)")
+    }
+}
+
+/// Global access point for error reporting. Code should prefer calling
+/// `AppErrorReporter.log(...)` instead of `print` when dealing with
+/// unexpected failures.
+///
+/// These methods are nonisolated and can be called from any actor context.
+/// They use thread-safe os.log internally.
+enum AppErrorReporter {
+    /// The active reporter. Uses `nonisolated(unsafe)` because swapping only
+    /// happens during test setUp/tearDown on the MainActor, before any
+    /// concurrent access begins.
+    nonisolated(unsafe) private static var reporter: ErrorReporter = ConsoleErrorReporter()
+
+    /// Replace the active reporter. Only call during app setup or test
+    /// setUp/tearDown before any concurrent access.
+    nonisolated static func use(_ newReporter: some ErrorReporter) {
+        reporter = newReporter
+    }
+
+    /// Log an error. Safe to call from any actor or thread.
+    nonisolated static func log(error: Error, context: String) {
+        reporter.log(error: error, context: context)
+    }
+
+    /// Log an informational message. Safe to call from any actor or thread.
+    nonisolated static func log(message: String, context: String) {
+        reporter.log(message: message, context: context)
+    }
+}

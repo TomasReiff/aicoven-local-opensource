@@ -1,0 +1,29 @@
+// Development Configuration
+// NOTE: Secrets.xcconfig is available for optional developer-specific keys
+// (e.g., personal Gemini/OpenAI keys) but is not required for the build.
+// All required configuration is in this file.
+
+// API Environment
+APP_ENV = development
+
+
+// Firebase Configuration
+FIREBASE_API_KEY = AIzaSyDq6mvLZ-zDZgtoB7u2dxLkkd4odoy2C9g
+FIREBASE_PROJECT_ID = aicoven
+FIREBASE_APP_ID = 1:870439799161:ios:d01e1ad69c55d2a5f007a8
+FIREBASE_AUTH_DOMAIN = aicoven.firebaseapp.com
+FIREBASE_STORAGE_BUCKET = aicoven.firebasestorage.app
+FIREBASE_MESSAGING_SENDER_ID = 870439799161
+
+// App Identifiers
+PRODUCT_BUNDLE_IDENTIFIER_IOS = com.aicoven.com
+PRODUCT_BUNDLE_IDENTIFIER_MACOS = com.aicoven.com
+
+// App Display Name
+PRODUCT_NAME = AICoven Dev
+
+// Code Signing
+CODE_SIGN_STYLE = Automatic
+DEVELOPMENT_TEAM = // Add your team ID here
+
+
