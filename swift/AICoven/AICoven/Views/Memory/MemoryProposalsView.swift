@@ -355,7 +355,8 @@ struct ProposalCard: View {
                             draftContent = proposal.proposedContent
                         }
                         .font(.aicovenBodySmall)
-                        .buttonStyle(.bordered)
+                        .foregroundColor(.aicovenTeal)
+                        .buttonStyle(.plain)
                     } else {
                         GradientButton("Approve", icon: "checkmark", style: .primary) {
                             onApprove()
@@ -378,8 +379,9 @@ struct ProposalCard: View {
                                 Text("Edit")
                             }
                             .font(.aicovenBodySmall)
+                            .foregroundColor(.aicovenTeal)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.plain)
                     }
                     
                     Button(role: .destructive) {

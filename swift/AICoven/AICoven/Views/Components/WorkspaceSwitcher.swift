@@ -51,10 +51,6 @@ struct WorkspaceSwitcher: View {
             .padding(.vertical, Spacing.xs)
             .background(Color.aicovenGlass)
             .cornerRadius(BorderRadius.sm)
-            .overlay(
-                RoundedRectangle(cornerRadius: BorderRadius.sm)
-                    .strokeBorder(Color.aicovenBorder, lineWidth: 1)
-            )
         }
         .buttonStyle(.plain)
         .frame(maxWidth: isExpanded ? .infinity : nil) // Only expand when sidebar is expanded

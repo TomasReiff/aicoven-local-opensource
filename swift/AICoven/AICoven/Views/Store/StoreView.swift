@@ -96,6 +96,7 @@ struct StoreView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
+                        .foregroundColor(.aicovenTeal)
                 }
             }
         }
@@ -320,7 +321,7 @@ struct FeatureUpsellView: View {
 
             Button("Not Now") { dismiss() }
                 .font(.aicovenBodySmall)
-                .foregroundColor(.aicovenTextTertiary)
+                .foregroundColor(.aicovenTeal)
 
             Spacer()
         }

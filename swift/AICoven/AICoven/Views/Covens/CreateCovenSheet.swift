@@ -48,16 +48,12 @@ struct CreateCovenSheet: View {
                                     .font(.aicovenBodyMedium)
                                     .foregroundColor(.aicovenTextPrimary)
                                 
-                                TextField("", text: $covenName, prompt: Text("My Project").foregroundColor(.aicovenTextTertiary))
+                            TextField("", text: $covenName, prompt: Text("My Project").foregroundColor(.aicovenTextTertiary))
                                     .font(.aicovenBody)
                                     .foregroundColor(.aicovenTextPrimary)
                                     .padding(Spacing.sm)
                                     .background(Color.aicovenGlass)
                                     .cornerRadius(BorderRadius.md)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: BorderRadius.md)
-                                            .strokeBorder(Color.aicovenBorder, lineWidth: 1)
-                                    )
                             }
                             
                             // Description field
@@ -73,10 +69,6 @@ struct CreateCovenSheet: View {
                                     .background(Color.aicovenGlass)
                                     .cornerRadius(BorderRadius.md)
                                     .lineLimit(3...6)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: BorderRadius.md)
-                                            .strokeBorder(Color.aicovenBorder, lineWidth: 1)
-                                    )
                             }
                         }
                         .padding(.horizontal, Spacing.xl)
@@ -93,6 +85,7 @@ struct CreateCovenSheet: View {
                         
                         // Actions
                         HStack(spacing: Spacing.md) {
+                            // Cancel button with teal text styling
                             Button("Cancel") {
                                 dismiss()
                             }
@@ -100,11 +93,7 @@ struct CreateCovenSheet: View {
                             .padding(.horizontal, Spacing.lg)
                             .padding(.vertical, Spacing.sm)
                             .background(Color.aicovenGlass)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: BorderRadius.md)
-                                    .strokeBorder(Color.aicovenBorder, lineWidth: 1)
-                            )
-                            .foregroundColor(.aicovenTextPrimary)
+                            .foregroundColor(.aicovenTeal)
                             .cornerRadius(BorderRadius.md)
                             
                             Button(action: createCoven) {

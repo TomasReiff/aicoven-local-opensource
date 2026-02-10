@@ -16,55 +16,89 @@ struct ForgotPasswordView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                Text("Reset Password")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                
-                Text("Enter your email address and we'll send you a link to reset your password.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-                
-                TextField("Email", text: $email)
-                    .textContentType(.emailAddress)
-                    #if os(iOS)
-                    .keyboardType(.emailAddress)
-                    .autocapitalization(.none)
-                    #endif
-                    .padding()
-                    .background(Color.gray.opacity(0.2))
-                    .cornerRadius(10)
-                    .padding(.horizontal, 32)
-                
-                Button(action: handleResetPassword) {
-                    if isLoading {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Text("Send Reset Link")
-                            .fontWeight(.semibold)
+            ScrollView {
+                VStack(spacing: Spacing.lg) {
+                    // Header with icon
+                    VStack(spacing: Spacing.md) {
+                        IconBadge(icon: "envelope.badge", size: 60, color: .aicovenTeal)
+                        
+                        Text("Reset Password")
+                            .font(.aicovenDisplayMedium)
+                            .foregroundColor(.aicovenTextPrimary)
+                        
+                        Text("Enter your email address and we'll send you a link to reset your password.")
+                            .font(.aicovenBody)
+                            .foregroundColor(.aicovenTextSecondary)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 400)
                     }
+                    .padding(.top, Spacing.xxl)
+                    
+                    // Email field
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("Email")
+                            .font(.aicovenH3)
+                            .foregroundColor(.aicovenTextPrimary)
+                        
+                        HStack(spacing: Spacing.sm) {
+                            Image(systemName: "envelope")
+                                .font(.system(size: 16))
+                                .foregroundColor(.aicovenTextTertiary)
+                            
+                            TextField("", text: $email, prompt: Text("Enter your email").foregroundColor(.aicovenTextTertiary))
+                                .textContentType(.emailAddress)
+                                #if os(iOS)
+                                .keyboardType(.emailAddress)
+                                .autocapitalization(.none)
+                                #endif
+                                .foregroundColor(.aicovenTextPrimary)
+                        }
+                        .padding(Spacing.md)
+                        .background(Color.aicovenGlass)
+                        .cornerRadius(BorderRadius.md)
+                    }
+                    .frame(maxWidth: 400)
+                    .padding(.horizontal, Spacing.lg)
+                    
+                    // Submit button
+                    Button(action: handleResetPassword) {
+                        HStack {
+                            if isLoading {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Text("Send Reset Link")
+                                    .font(.aicovenBodyMedium)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(Spacing.md)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.aicovenTeal, Color.aicovenPurple],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .foregroundColor(.white)
+                        .cornerRadius(BorderRadius.md)
+                        .shadow(
+                            color: !email.isEmpty && !isLoading ? Color.aicovenTeal.opacity(0.5) : .clear,
+                            radius: 12,
+                            x: 0,
+                            y: 4
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isLoading || email.isEmpty)
+                    .opacity(!email.isEmpty && !isLoading ? 1.0 : 0.5)
+                    .frame(maxWidth: 400)
+                    .padding(.horizontal, Spacing.lg)
+                    
+                    Spacer()
                 }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(
-                    LinearGradient(
-                        colors: [.purple, .pink],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .foregroundColor(.white)
-                .cornerRadius(10)
-                .disabled(isLoading || email.isEmpty)
-                .padding(.horizontal, 32)
-                
-                Spacer()
             }
-            .padding()
-            .background(Color.black)
+            .background(NebulaBackground())
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -77,6 +111,7 @@ struct ForgotPasswordView: View {
                         )
                         dismiss()
                     }
+                    .foregroundColor(.aicovenTeal)
                 }
             }
             .alert("Success", isPresented: $showSuccess) {
