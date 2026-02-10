@@ -6,6 +6,7 @@ struct MemoryChunkRecord: Codable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "memory_chunks"
 
     var id: String
+    var userId: String?  // Owner of this memory for data isolation
     var scope: String
     var piiFlag: Bool
     var tags: String?
@@ -16,7 +17,9 @@ struct MemoryChunkRecord: Codable, FetchableRecord, PersistableRecord {
     var embedding: Data?
 
     enum Columns: String, ColumnExpression {
-        case id, scope
+        case id
+        case userId = "user_id"
+        case scope
         case piiFlag = "pii_flag"
         case tags
         case createdAt = "created_at"
@@ -28,6 +31,7 @@ struct MemoryChunkRecord: Codable, FetchableRecord, PersistableRecord {
 
     /// Memberwise initializer used by repositories when inserting new rows.
     init(id: String,
+         userId: String?,
          scope: String,
          piiFlag: Bool,
          tags: String?,
@@ -37,6 +41,7 @@ struct MemoryChunkRecord: Codable, FetchableRecord, PersistableRecord {
          textCiphertext: Data,
          embedding: Data?) {
         self.id = id
+        self.userId = userId
         self.scope = scope
         self.piiFlag = piiFlag
         self.tags = tags
@@ -50,6 +55,7 @@ struct MemoryChunkRecord: Codable, FetchableRecord, PersistableRecord {
     // Custom Row initializer so GRDB can decode from the snake_case schema.
     init(row: Row) {
         id = row[Columns.id]
+        userId = row[Columns.userId]
         scope = row[Columns.scope]
         piiFlag = row[Columns.piiFlag]
         tags = row[Columns.tags]
@@ -62,6 +68,7 @@ struct MemoryChunkRecord: Codable, FetchableRecord, PersistableRecord {
 
     func encode(to container: inout PersistenceContainer) {
         container[Columns.id] = id
+        container[Columns.userId] = userId
         container[Columns.scope] = scope
         container[Columns.piiFlag] = piiFlag
         container[Columns.tags] = tags
@@ -108,6 +115,9 @@ actor MemoryRepository {
                      embedding: [Float]?) async throws -> LocalMemoryChunk {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
 
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
+
         let id = UUID().uuidString
         let now = Date()
         let plaintext = Data(text.utf8)
@@ -125,6 +135,7 @@ actor MemoryRepository {
 
         var record = MemoryChunkRecord(
             id: id,
+            userId: currentUserId,
             scope: scope,
             piiFlag: pii,
             tags: tagsString,
@@ -152,11 +163,19 @@ actor MemoryRepository {
         )
     }
 
+    /// Load memories belonging to the current user, optionally filtered by scope.
     func loadMemories(scope: String? = nil, limit: Int = 50) async throws -> [LocalMemoryChunk] {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
 
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
+
         let records: [MemoryChunkRecord] = try await dbQueue.read { db in
-            var request = MemoryChunkRecord.order(MemoryChunkRecord.Columns.createdAt.desc).limit(limit)
+            // Only fetch memories belonging to the current user
+            var request = MemoryChunkRecord
+                .filter(MemoryChunkRecord.Columns.userId == currentUserId)
+                .order(MemoryChunkRecord.Columns.createdAt.desc)
+                .limit(limit)
             if let scope {
                 request = request.filter(MemoryChunkRecord.Columns.scope == scope)
             }
@@ -176,33 +195,51 @@ actor MemoryRepository {
         return result
     }
 
-    /// Load a single memory chunk by ID.
+    /// Load a single memory chunk by ID. Only returns if it belongs to the current user.
     func loadMemory(id: String) async throws -> LocalMemoryChunk? {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
 
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
+
         let record: MemoryChunkRecord? = try await dbQueue.read { db in
-            try MemoryChunkRecord.fetchOne(db, key: id)
+            // Filter by both ID and user_id to ensure user can only see their own memories
+            try MemoryChunkRecord
+                .filter(MemoryChunkRecord.Columns.id == id)
+                .filter(MemoryChunkRecord.Columns.userId == currentUserId)
+                .fetchOne(db)
         }
 
         guard let rec = record else { return nil }
         return try await mapRecordToChunk(rec)
     }
 
-    /// Delete a memory chunk by ID.
+    /// Delete a memory chunk by ID. Only deletes if it belongs to the current user.
     func deleteMemory(id: String) async throws {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
 
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
+
         try await dbQueue.write { db in
-            _ = try MemoryChunkRecord.deleteOne(db, key: id)
+            // Only delete if it belongs to the current user
+            _ = try MemoryChunkRecord
+                .filter(MemoryChunkRecord.Columns.id == id)
+                .filter(MemoryChunkRecord.Columns.userId == currentUserId)
+                .deleteAll(db)
         }
     }
 
     /// Update an existing memory chunk's text, tags, and embedding.
+    /// Only updates if it belongs to the current user.
     func updateMemory(id: String,
                       newText: String,
                       newTags: [String],
                       newEmbedding: [Float]?) async throws -> LocalMemoryChunk? {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
+
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
 
         let plaintext = Data(newText.utf8)
         let ciphertext = try await DataEncryptionService.shared.encrypt(plaintext, purpose: "memory_chunk")
@@ -218,7 +255,11 @@ actor MemoryRepository {
         }
 
         try await dbQueue.write { db in
-            if var record = try MemoryChunkRecord.fetchOne(db, key: id) {
+            // Only update if it belongs to the current user
+            if var record = try MemoryChunkRecord
+                .filter(MemoryChunkRecord.Columns.id == id)
+                .filter(MemoryChunkRecord.Columns.userId == currentUserId)
+                .fetchOne(db) {
                 record.textCiphertext = ciphertext
                 record.tags = tagsString
                 record.embedding = embeddingData
@@ -283,6 +324,7 @@ struct MemoryProposalRecord: Codable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "memory_proposals"
 
     var id: String
+    var userId: String?  // Owner of this proposal for data isolation
     var eventId: String?
     var covenId: String?
     var proposedContent: String
@@ -300,6 +342,7 @@ struct MemoryProposalRecord: Codable, FetchableRecord, PersistableRecord {
 
     enum Columns: String, ColumnExpression {
         case id
+        case userId = "user_id"
         case eventId = "event_id"
         case covenId = "coven_id"
         case proposedContent = "proposed_content"
@@ -318,6 +361,7 @@ struct MemoryProposalRecord: Codable, FetchableRecord, PersistableRecord {
 
     /// Memberwise initializer used by repositories when inserting new rows.
     init(id: String,
+         userId: String?,
          eventId: String?,
          covenId: String?,
          proposedContent: String,
@@ -333,6 +377,7 @@ struct MemoryProposalRecord: Codable, FetchableRecord, PersistableRecord {
          title: String?,
          reviewFeedback: String?) {
         self.id = id
+        self.userId = userId
         self.eventId = eventId
         self.covenId = covenId
         self.proposedContent = proposedContent
@@ -352,6 +397,7 @@ struct MemoryProposalRecord: Codable, FetchableRecord, PersistableRecord {
     // Custom Row initializer so GRDB can decode from the snake_case schema.
     init(row: Row) {
         id = row[Columns.id]
+        userId = row[Columns.userId]
         eventId = row[Columns.eventId]
         covenId = row[Columns.covenId]
         proposedContent = row[Columns.proposedContent]
@@ -370,6 +416,7 @@ struct MemoryProposalRecord: Codable, FetchableRecord, PersistableRecord {
 
     func encode(to container: inout PersistenceContainer) {
         container[Columns.id] = id
+        container[Columns.userId] = userId
         container[Columns.eventId] = eventId
         container[Columns.covenId] = covenId
         container[Columns.proposedContent] = proposedContent
@@ -399,13 +446,19 @@ actor MemoryProposalRepository {
 
     private init() {}
 
-    /// List proposals, optionally filtering by coven and status. Results are
-    /// ordered from newest to oldest.
+    /// List proposals belonging to the current user, optionally filtering by coven and status.
+    /// Results are ordered from newest to oldest.
     func listProposals(covenId: String?, status: String?) async throws -> [MemoryProposalRecord] {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
 
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
+
         return try await dbQueue.read { db in
-            var request = MemoryProposalRecord.order(MemoryProposalRecord.Columns.createdAt.desc)
+            // Only fetch proposals belonging to the current user
+            var request = MemoryProposalRecord
+                .filter(MemoryProposalRecord.Columns.userId == currentUserId)
+                .order(MemoryProposalRecord.Columns.createdAt.desc)
 
             if let covenId {
                 request = request.filter(MemoryProposalRecord.Columns.covenId == covenId)
@@ -418,12 +471,19 @@ actor MemoryProposalRepository {
         }
     }
 
-    /// Load a single proposal by ID.
+    /// Load a single proposal by ID. Only returns if it belongs to the current user.
     func loadProposal(id: String) async throws -> MemoryProposalRecord? {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
 
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
+
         return try await dbQueue.read { db in
-            try MemoryProposalRecord.fetchOne(db, key: id)
+            // Filter by both ID and user_id to ensure user can only see their own proposals
+            try MemoryProposalRecord
+                .filter(MemoryProposalRecord.Columns.id == id)
+                .filter(MemoryProposalRecord.Columns.userId == currentUserId)
+                .fetchOne(db)
         }
     }
 
@@ -441,6 +501,9 @@ actor MemoryProposalRepository {
                         title: String?) async throws -> MemoryProposalRecord {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
 
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
+
         let now = Date()
         let tagsString: String?
         if let proposedTags, !proposedTags.isEmpty {
@@ -452,6 +515,7 @@ actor MemoryProposalRepository {
 
         var record = MemoryProposalRecord(
             id: id,
+            userId: currentUserId,
             eventId: eventId,
             covenId: covenId,
             proposedContent: proposedContent,
@@ -476,17 +540,24 @@ actor MemoryProposalRepository {
     }
 
     /// Update the status and review metadata for a proposal, returning the
-    /// updated record.
+    /// updated record. Only updates if it belongs to the current user.
     func updateStatus(id: String,
                       status: String,
                       reviewedBy: String?,
                       reviewFeedback: String?) async throws -> MemoryProposalRecord {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
 
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
+
         let now = Date()
 
         return try await dbQueue.write { db in
-            guard var record = try MemoryProposalRecord.fetchOne(db, key: id) else {
+            // Only update if it belongs to the current user
+            guard var record = try MemoryProposalRecord
+                .filter(MemoryProposalRecord.Columns.id == id)
+                .filter(MemoryProposalRecord.Columns.userId == currentUserId)
+                .fetchOne(db) else {
                 throw RepositoryError.databaseUnavailable
             }
 

@@ -6,6 +6,7 @@ struct ThreadRecord: Codable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "threads"
 
     var id: String
+    var userId: String?  // Owner of this thread for data isolation
     var title: String?
     var createdAt: Date
     var updatedAt: Date?
@@ -13,7 +14,9 @@ struct ThreadRecord: Codable, FetchableRecord, PersistableRecord {
     var metadata: String?
 
     enum Columns: String, ColumnExpression {
-        case id, title
+        case id
+        case userId = "user_id"
+        case title
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case summaryCiphertext = "summary_ciphertext"
@@ -22,12 +25,14 @@ struct ThreadRecord: Codable, FetchableRecord, PersistableRecord {
 
     /// Memberwise initializer used by repositories when inserting new rows.
     init(id: String,
+         userId: String?,
          title: String?,
          createdAt: Date,
          updatedAt: Date?,
          summaryCiphertext: Data?,
          metadata: String?) {
         self.id = id
+        self.userId = userId
         self.title = title
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -38,6 +43,7 @@ struct ThreadRecord: Codable, FetchableRecord, PersistableRecord {
     /// Custom Row initializer so GRDB can decode from the snake_case schema.
     init(row: Row) {
         id = row[Columns.id]
+        userId = row[Columns.userId]
         title = row[Columns.title]
         createdAt = row[Columns.createdAt]
         updatedAt = row[Columns.updatedAt]
@@ -48,6 +54,7 @@ struct ThreadRecord: Codable, FetchableRecord, PersistableRecord {
     /// Ensure GRDB uses snake_case column names on INSERT/UPDATE.
     func encode(to container: inout PersistenceContainer) {
         container[Columns.id] = id
+        container[Columns.userId] = userId
         container[Columns.title] = title
         container[Columns.createdAt] = createdAt
         container[Columns.updatedAt] = updatedAt
@@ -61,6 +68,7 @@ struct MessageRecord: Codable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "messages"
 
     var id: String
+    var userId: String?  // Owner of this message for data isolation
     var threadID: String
     var role: String
     var createdAt: Date
@@ -69,6 +77,7 @@ struct MessageRecord: Codable, FetchableRecord, PersistableRecord {
 
     enum Columns: String, ColumnExpression {
         case id
+        case userId = "user_id"
         case threadID = "thread_id"
         case role
         case createdAt = "created_at"
@@ -78,12 +87,14 @@ struct MessageRecord: Codable, FetchableRecord, PersistableRecord {
 
     /// Memberwise initializer used by repositories when inserting new rows.
     init(id: String,
+         userId: String?,
          threadID: String,
          role: String,
          createdAt: Date,
          contentCiphertext: Data,
          metadata: String?) {
         self.id = id
+        self.userId = userId
         self.threadID = threadID
         self.role = role
         self.createdAt = createdAt
@@ -94,6 +105,7 @@ struct MessageRecord: Codable, FetchableRecord, PersistableRecord {
     /// Custom Row initializer so GRDB can decode from the snake_case schema.
     init(row: Row) {
         id = row[Columns.id]
+        userId = row[Columns.userId]
         threadID = row[Columns.threadID]
         role = row[Columns.role]
         createdAt = row[Columns.createdAt]
@@ -103,6 +115,7 @@ struct MessageRecord: Codable, FetchableRecord, PersistableRecord {
 
     func encode(to container: inout PersistenceContainer) {
         container[Columns.id] = id
+        container[Columns.userId] = userId
         container[Columns.threadID] = threadID
         container[Columns.role] = role
         container[Columns.createdAt] = createdAt
@@ -145,10 +158,14 @@ actor ThreadRepository {
     func createThread(title: String?) async throws -> LocalThread {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
 
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
+
         let now = Date()
         let id = UUID().uuidString
         var record = ThreadRecord(
             id: id,
+            userId: currentUserId,
             title: title,
             createdAt: now,
             updatedAt: now,
@@ -164,11 +181,19 @@ actor ThreadRepository {
     }
 
     /// Load a single thread, including its decrypted summary if present.
+    /// Only returns the thread if it belongs to the current user.
     func loadThread(id: String) async throws -> LocalThread? {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
 
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
+
         let record: ThreadRecord? = try await dbQueue.read { db in
-            try ThreadRecord.fetchOne(db, key: id)
+            // Filter by both ID and user_id to ensure user can only see their own threads
+            try ThreadRecord
+                .filter(ThreadRecord.Columns.id == id)
+                .filter(ThreadRecord.Columns.userId == currentUserId)
+                .fetchOne(db)
         }
         guard let rec = record else { return nil }
 
@@ -189,11 +214,19 @@ actor ThreadRepository {
         )
     }
 
+    /// Fetch all threads belonging to the current user.
     func fetchAllThreads() async throws -> [LocalThread] {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
 
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
+
         let records: [ThreadRecord] = try await dbQueue.read { db in
-            try ThreadRecord.fetchAll(db)
+            // Only fetch threads belonging to the current user
+            try ThreadRecord
+                .filter(ThreadRecord.Columns.userId == currentUserId)
+                .order(ThreadRecord.Columns.updatedAt.desc)
+                .fetchAll(db)
         }
 
         var result: [LocalThread] = []
@@ -248,6 +281,9 @@ actor ThreadRepository {
     func appendMessage(toThreadID threadID: String, role: String, content: String) async throws -> LocalMessage {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
 
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
+
         let now = Date()
         let id = UUID().uuidString
         let plaintextData = Data(content.utf8)
@@ -255,6 +291,7 @@ actor ThreadRepository {
 
         var record = MessageRecord(
             id: id,
+            userId: currentUserId,
             threadID: threadID,
             role: role,
             createdAt: now,
@@ -269,12 +306,18 @@ actor ThreadRepository {
         return LocalMessage(id: id, threadID: threadID, role: role, content: content, createdAt: now)
     }
 
+    /// Load messages for a thread. Only returns messages belonging to the current user.
     func loadMessages(forThreadID threadID: String, limit: Int? = nil) async throws -> [LocalMessage] {
         guard let dbQueue = await getDbQueue() else { throw RepositoryError.databaseUnavailable }
 
+        // Get current user ID for data isolation
+        let currentUserId = await MainActor.run { UserScope.currentUserID }
+
         let records: [MessageRecord] = try await dbQueue.read { db in
+            // Filter by thread AND user_id to ensure user can only see their own messages
             var request = MessageRecord
                 .filter(MessageRecord.Columns.threadID == threadID)
+                .filter(MessageRecord.Columns.userId == currentUserId)
                 .order(MessageRecord.Columns.createdAt.asc)
 
             if let limit {

@@ -184,6 +184,30 @@ final class DatabaseManager {
                 }
             }
 
+            // v5: CRITICAL PRIVACY FIX - add user_id to threads, messages,
+            // memory_chunks, and memory_proposals for per-user data isolation.
+            // Without this, all users on the same machine see each other's data.
+            migrator.registerMigration("v5_user_isolation") { db in
+                try db.alter(table: "threads") { t in
+                    t.add(column: "user_id", .text)
+                }
+                try db.alter(table: "messages") { t in
+                    t.add(column: "user_id", .text)
+                }
+                try db.alter(table: "memory_chunks") { t in
+                    t.add(column: "user_id", .text)
+                }
+                try db.alter(table: "memory_proposals") { t in
+                    t.add(column: "user_id", .text)
+                }
+
+                // Create indexes for efficient user-scoped queries
+                try db.create(index: "threads_user_id", on: "threads", columns: ["user_id"])
+                try db.create(index: "messages_user_id", on: "messages", columns: ["user_id"])
+                try db.create(index: "memory_chunks_user_id", on: "memory_chunks", columns: ["user_id"])
+                try db.create(index: "memory_proposals_user_id", on: "memory_proposals", columns: ["user_id"])
+            }
+
             try migrator.migrate(queue)
             self.dbQueue = queue
         } catch {
