@@ -6,7 +6,7 @@ For the cloud version of the app go to https://aicoven.ai/
 
 ## Goals
 
-- **No backend required**: no login, no accounts, no covens or roles.
+- **No backend required**: everything happens on device. The onli API calls are made to ai model providers.
 - **Local-first data**: chats, documents, and settings live on-device.
 - **User-provided API keys**: you bring your own keys for LLM/embedding providers.
 - **Simple default assistant**: a single configurable assistant that "just works" out of the box.
