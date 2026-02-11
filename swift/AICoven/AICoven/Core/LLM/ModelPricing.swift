@@ -33,9 +33,9 @@ struct ModelPricingCatalog {
         ModelPricing(provider: "google", modelPattern: "gemini-2.0-flash", inputPer1K: 0.00010, outputPer1K: 0.00040),
         ModelPricing(provider: "google", modelPattern: "gemini-2.5-flash", inputPer1K: 0.00010, outputPer1K: 0.00040),
         
-        // Google Gemini 3.0 (Estimated/Placeholder pricing based on 2.0 trends)
-        ModelPricing(provider: "google", modelPattern: "gemini-3.0-pro",   inputPer1K: 0.0035, outputPer1K: 0.0100),
-        ModelPricing(provider: "google", modelPattern: "gemini-3.0-flash", inputPer1K: 0.00010, outputPer1K: 0.00040)
+        // Google Gemini 3 (Preview – pricing estimates based on prior generation trends)
+        ModelPricing(provider: "google", modelPattern: "gemini-3-pro",   inputPer1K: 0.00125, outputPer1K: 0.01),
+        ModelPricing(provider: "google", modelPattern: "gemini-3-flash", inputPer1K: 0.00010, outputPer1K: 0.00040)
     ]
 
     init() {

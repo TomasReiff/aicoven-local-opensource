@@ -392,23 +392,50 @@ extension ProviderAccountService {
             guard let apiKey = KeychainHelper.load(key: keychainKey(for: account.id)) ?? UserDefaults.standard.string(forKey: UserScope.scopedKey("gemini_api_key")) else {
                 throw NSError(domain: "ProviderAccountService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing Gemini API key for account \(account.id)"])
             }
-            struct GeminiListResponse: Decodable { struct Model: Decodable { let name: String } ; let models: [Model] }
-            var components = URLComponents(string: "https://generativelanguage.googleapis.com/v1beta/models")!
-            components.queryItems = [URLQueryItem(name: "key", value: apiKey)]
-            let url = components.url!
-            var request = URLRequest(url: url)
-            request.httpMethod = "GET"
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body>"
-                throw NSError(domain: "ProviderAccountService", code: http.statusCode,
-                              userInfo: [NSLocalizedDescriptionKey: "Gemini models HTTP \(http.statusCode): \(body)"])
+            struct GeminiListResponse: Decodable {
+                struct Model: Decodable { let name: String }
+                let models: [Model]?
+                let nextPageToken: String?
             }
-            let decoded = try JSONDecoder().decode(GeminiListResponse.self, from: data)
-            let ids = decoded.models.map { $0.name }
-            let chatOnly = ids.filter { isChatModel(provider: "google", id: $0) }
-            let models = chatOnly.isEmpty ? ids : chatOnly
+
+            // Fetch all pages from the Gemini list-models endpoint.
+            var allModelNames: [String] = []
+            var pageToken: String? = nil
+            repeat {
+                var components = URLComponents(string: "https://generativelanguage.googleapis.com/v1beta/models")!
+                var queryItems = [URLQueryItem(name: "key", value: apiKey)]
+                if let token = pageToken {
+                    queryItems.append(URLQueryItem(name: "pageToken", value: token))
+                }
+                components.queryItems = queryItems
+                let url = components.url!
+                var request = URLRequest(url: url)
+                request.httpMethod = "GET"
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+                let (data, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                    let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body>"
+                    throw NSError(domain: "ProviderAccountService", code: http.statusCode,
+                                  userInfo: [NSLocalizedDescriptionKey: "Gemini models HTTP \(http.statusCode): \(body)"])
+                }
+                let decoded = try JSONDecoder().decode(GeminiListResponse.self, from: data)
+                allModelNames.append(contentsOf: (decoded.models ?? []).map { $0.name })
+                pageToken = decoded.nextPageToken
+            } while pageToken != nil
+
+            // Merge in static preview models that may not appear in the API yet.
+            let previewModels = [
+                "models/gemini-3-pro-preview",
+                "models/gemini-3-flash-preview",
+                "models/gemini-3-pro-image-preview"
+            ]
+            let existingSet = Set(allModelNames.map { $0.lowercased() })
+            for preview in previewModels where !existingSet.contains(preview.lowercased()) {
+                allModelNames.append(preview)
+            }
+
+            let chatOnly = allModelNames.filter { isChatModel(provider: "google", id: $0) }
+            let models = chatOnly.isEmpty ? allModelNames : chatOnly
             return models.map { name in
                 ProviderInitializationStatus.ModelMetadata(
                     id: name, // e.g. "models/gemini-2.0-flash"
