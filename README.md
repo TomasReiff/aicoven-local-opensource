@@ -6,7 +6,7 @@ For the cloud version of the app go to https://aicoven.ai/
 
 ## Goals
 
-- **No backend required**: everything happens on device. The onli API calls are made to ai model providers.
+- **No backend required**: everything happens on device. The only API calls are made to ai model providers.
 - **Local-first data**: chats, documents, and settings live on-device.
 - **User-provided API keys**: you bring your own keys for LLM/embedding providers.
 - **Simple default assistant**: a single configurable assistant that "just works" out of the box.
@@ -80,7 +80,7 @@ The local-first client is functional for core workflows but some features are st
 - Autonomous agent runner with bounded multi-step execution
 - Web search via DuckDuckGo (no API key required)
 - Attachment analysis for files and images
-- Basic chat UI with thread management
+- Enhanced chat UI with thread management
 - Shell command tools with approval flow
 - Connected apps: GitHub and Google Drive integrations
 - StoreKit 2 in-app purchases with community edition bypass
@@ -94,8 +94,7 @@ The local-first client is functional for core workflows but some features are st
 - Thread rename/pin functionality (UI affordances present but not wired up)
 
 ### ⚠️ Known Limitations
-- Some legacy cloud services (remote auth, file upload) are present but non-functional; covens and roles are actively being reintegrated
-- File upload service is stubbed but unimplemented (not needed for local-first operation)
+- Some legacy cloud services are present but non-functional; they are being removed as they are found
 - Test coverage is moderate (~25% overall) — see [`docs/TEST_COVERAGE.md`](docs/TEST_COVERAGE.md) for details
 
 For detailed code review findings and recommendations, see [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md).
