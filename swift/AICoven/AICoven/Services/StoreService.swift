@@ -27,8 +27,8 @@ class StoreService: ObservableObject {
     // MARK: - Product identifiers
 
     /// Product IDs matching App Store Connect configuration.
-    static let creatorID    = "com.aicoven.creator"
-    static let toolsPackID  = "com.aicoven.toolspack"
+    static let creatorID = "com.aicoven.creator"
+    static let toolsPackID = "com.aicoven.toolspack"
     static let everythingID = "com.aicoven.everything"
 
     static let allProductIDs: Set<String> = [
@@ -44,22 +44,35 @@ class StoreService: ObservableObject {
 
     // MARK: - Entitlement helpers
 
+    /// Whether user is authenticated. Entitlements require authentication.
+    private var isAuthenticated: Bool {
+        UserScope.currentUserID != nil
+    }
+
     var hasCreator: Bool {
-        purchasedProductIDs.contains(Self.creatorID) ||
-        purchasedProductIDs.contains(Self.everythingID)
+        // Require authentication - no entitlements for unauthenticated users
+        guard isAuthenticated else { return false }
+        return purchasedProductIDs.contains(Self.creatorID) ||
+            purchasedProductIDs.contains(Self.everythingID)
     }
 
     var hasToolsPack: Bool {
-        purchasedProductIDs.contains(Self.toolsPackID) ||
-        purchasedProductIDs.contains(Self.everythingID)
+        // Require authentication - no entitlements for unauthenticated users
+        guard isAuthenticated else { return false }
+        return purchasedProductIDs.contains(Self.toolsPackID) ||
+            purchasedProductIDs.contains(Self.everythingID)
     }
 
     var hasEverything: Bool {
-        purchasedProductIDs.contains(Self.everythingID)
+        // Require authentication - no entitlements for unauthenticated users
+        guard isAuthenticated else { return false }
+        return purchasedProductIDs.contains(Self.everythingID)
     }
 
     /// Check whether a specific feature is unlocked.
+    /// Returns false if user is not authenticated.
     func hasEntitlement(_ feature: PurchasableFeature) -> Bool {
+        guard isAuthenticated else { return false }
         switch feature {
         case .covens, .multipleAgents, .modelCustomization:
             return hasCreator
@@ -72,25 +85,54 @@ class StoreService: ObservableObject {
     func requiredTier(for feature: PurchasableFeature) -> String {
         switch feature {
         case .covens, .multipleAgents, .modelCustomization:
-            return "Creator"
+            "Creator"
         case .shellTool, .githubTool, .googleDriveTool:
-            return "Tools Pack"
+            "Tools Pack"
         }
     }
 
     // MARK: - Persistence (backup)
 
-    private static let purchasedIDsKey = "StoreService.purchasedProductIDs"
+    /// User-scoped storage key so each Firebase user gets their own purchase cache.
+    private var purchasedIDsKey: String {
+        UserScope.scopedKey("StoreService.purchasedProductIDs")
+    }
 
     private func persistPurchases() {
-        UserDefaults.standard.set(Array(purchasedProductIDs),
-                                  forKey: Self.purchasedIDsKey)
+        UserDefaults.standard.set(
+            Array(purchasedProductIDs),
+            forKey: purchasedIDsKey
+        )
     }
 
     private func loadPersistedPurchases() {
-        if let saved = UserDefaults.standard.stringArray(forKey: Self.purchasedIDsKey) {
+        if let saved = UserDefaults.standard.stringArray(forKey: purchasedIDsKey) {
             purchasedProductIDs = Set(saved)
+        } else {
+            purchasedProductIDs = []
         }
+    }
+
+    /// Reload entitlements for the current user. Call after user switch.
+    /// Requires authentication - clears entitlements if no user is signed in.
+    func reloadForCurrentUser() async {
+        await MainActor.run {
+            // Clear cached purchases (they were for a different user)
+            purchasedProductIDs = []
+
+            // Only load purchases if user is authenticated
+            guard UserScope.currentUserID != nil else {
+                AppErrorReporter.log(message: "Clearing purchases - no authenticated user", context: "StoreService.reloadForCurrentUser")
+                return
+            }
+
+            // Load any cached purchases for this user
+            loadPersistedPurchases()
+        }
+
+        // Only refresh from StoreKit if authenticated
+        guard UserScope.currentUserID != nil else { return }
+        await refreshEntitlements()
     }
 
     // MARK: - Transaction listener
@@ -98,11 +140,12 @@ class StoreService: ObservableObject {
     private var transactionListenerTask: Task<Void, Never>?
 
     private init() {
-        loadPersistedPurchases()
+        // Don't load persisted purchases here - they're unscoped if no user is signed in.
+        // Instead, load them in reloadForCurrentUser() which is called after auth.
         transactionListenerTask = listenForTransactions()
         Task {
             await loadProducts()
-            await refreshEntitlements()
+            // Don't refresh entitlements here either - wait for reloadForCurrentUser()
         }
     }
 
@@ -116,7 +159,7 @@ class StoreService: ObservableObject {
         Task.detached { [weak self] in
             for await result in Transaction.updates {
                 guard let self else { return }
-                if case .verified(let transaction) = result {
+                if case let .verified(transaction) = result {
                     await MainActor.run {
                         self.purchasedProductIDs.insert(transaction.productID)
                         self.persistPurchases()
@@ -151,15 +194,22 @@ class StoreService: ObservableObject {
 
     // MARK: - Purchase
 
+    /// Purchase a product. Requires authentication.
     func purchase(_ product: Product) async {
         purchaseError = nil
+
+        // Require authentication before allowing purchase
+        guard UserScope.currentUserID != nil else {
+            purchaseError = "Please sign in to make a purchase."
+            return
+        }
 
         do {
             let result = try await product.purchase()
 
             switch result {
-            case .success(let verification):
-                if case .verified(let transaction) = verification {
+            case let .success(verification):
+                if case let .verified(transaction) = verification {
                     purchasedProductIDs.insert(transaction.productID)
                     persistPurchases()
                     await transaction.finish()
@@ -193,7 +243,7 @@ class StoreService: ObservableObject {
         var entitled: Set<String> = []
 
         for await result in Transaction.currentEntitlements {
-            if case .verified(let transaction) = result {
+            if case let .verified(transaction) = result {
                 if Self.allProductIDs.contains(transaction.productID) {
                     entitled.insert(transaction.productID)
                 }

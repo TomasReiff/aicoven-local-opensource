@@ -9,8 +9,8 @@ final class CapturingErrorReporter: ErrorReporter {
         let message: String
     }
 
-    nonisolated(unsafe) private(set) var errors: [LoggedError] = []
-    nonisolated(unsafe) private(set) var messages: [LoggedError] = []
+    private(set) nonisolated(unsafe) var errors: [LoggedError] = []
+    private(set) nonisolated(unsafe) var messages: [LoggedError] = []
 
     func log(error: Error, context: String) {
         errors.append(LoggedError(context: context, message: String(describing: error)))
@@ -35,9 +35,20 @@ final class ErrorReportingTests: XCTestCase {
         let reporter = CapturingErrorReporter()
         AppErrorReporter.use(reporter)
 
-        // Write invalid JSON under the usage entries key so decoding fails.
+        // Write invalid JSON under the scoped usage entries key so decoding fails.
+        // UsageService uses UserScope.scopedKey() internally, so we must use the same.
         let defaults = UserDefaults.standard
-        defaults.set("not-json".data(using: .utf8), forKey: "local_usage.entries.v1")
+        let baseKey = "local_usage.entries.v1"
+        let scopedKey = UserScope.scopedKey(baseKey)
+
+        // Clean both keys first to ensure a clean state
+        defaults.removeObject(forKey: baseKey)
+        defaults.removeObject(forKey: scopedKey)
+        defaults.synchronize()
+
+        // Set corrupt data on the scoped key
+        defaults.set("not-json".data(using: .utf8), forKey: scopedKey)
+        defaults.synchronize()
 
         // Calling any public API that reads entries should trigger a decode
         // failure but still succeed overall.
@@ -47,9 +58,14 @@ final class ErrorReportingTests: XCTestCase {
             reporter.errors.contains { $0.context == "UsageService.loadEntries.decodeEntries" },
             "Expected UsageService.loadEntries.decodeEntries to be logged when entries JSON is corrupt"
         )
+
+        // Cleanup
+        defaults.removeObject(forKey: baseKey)
+        defaults.removeObject(forKey: scopedKey)
+        defaults.synchronize()
     }
 
-    func testPricingUpdateService_logsDecodeErrorAndReturnsEmpty() async throws {
+    func testPricingUpdateService_logsDecodeErrorAndReturnsEmpty() throws {
         let reporter = CapturingErrorReporter()
         AppErrorReporter.use(reporter)
 
@@ -76,7 +92,7 @@ final class ErrorReportingTests: XCTestCase {
         )
     }
 
-    func testThreadService_logsDecodeErrorOnCorruptJSON() async throws {
+    func testThreadService_logsDecodeErrorOnCorruptJSON() throws {
         let reporter = CapturingErrorReporter()
         AppErrorReporter.use(reporter)
 
@@ -107,7 +123,7 @@ final class ErrorReportingTests: XCTestCase {
         )
     }
 
-    func testDatabaseManager_logsErrorOnFailedMigration() async throws {
+    func testDatabaseManager_logsErrorOnFailedMigration() {
         let reporter = CapturingErrorReporter()
         AppErrorReporter.use(reporter)
 

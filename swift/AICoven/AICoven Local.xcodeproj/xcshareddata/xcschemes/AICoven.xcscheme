@@ -98,10 +98,11 @@
       </BuildableProductRunnable>
    </ProfileAction>
    <AnalyzeAction
-      buildConfiguration = "Debug">
+      buildConfiguration = "Release">
    </AnalyzeAction>
    <ArchiveAction
       buildConfiguration = "Release"
+      customArchiveName = "AICoven Local"
       revealArchiveInOrganizer = "YES">
    </ArchiveAction>
 </Scheme>
