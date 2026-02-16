@@ -489,12 +489,10 @@ struct MobileCovensRootView: View {
                             .foregroundColor(.aicovenTextSecondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, Spacing.lg)
-                        Button {
+                        // Use GradientButton directly with action (not wrapped in Button)
+                        GradientButton("Create Coven", icon: "plus", style: .primary) {
                             showCreateCoven = true
-                        } label: {
-                            GradientButton("Create Coven", icon: "plus", style: .primary) {}
                         }
-                        .buttonStyle(.plain)
                     }
                     .padding(Spacing.xl)
                     // First-time coven onboarding: when the user opens the

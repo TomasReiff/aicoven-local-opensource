@@ -29,12 +29,44 @@ actor ThreadService {
 
     /// Reload threads for the current user. Call after user switch.
     func reloadForCurrentUser() {
+        let currentUID = UserScope.currentUserID ?? "<none>"
         persistenceURL = ThreadService.makePersistenceURL()
+        print("🔄 ThreadService.reloadForCurrentUser: currentUID=\(currentUID), file=\(persistenceURL.lastPathComponent)")
+
         personalThreads = ThreadService.loadThreadsFromDisk(persistenceURL: persistenceURL)
+
+        // Debug: Log user IDs of loaded threads
+        let userIDs = Set(personalThreads.map(\.userId))
+        print("📋 Loaded threads with userIDs: \(userIDs)")
 
         // Clean up any orphaned threads without a valid user ID.
         // These may exist from before authentication was required.
         cleanupOrphanedThreads()
+
+        // Clean up threads created by automated tests
+        cleanupTestThreads()
+    }
+
+    /// Remove threads created by automated tests (identified by "Test Thread" prefix).
+    /// Call this to clean up after running tests with a real Firebase account.
+    func cleanupTestThreads() {
+        let testThreads = personalThreads.filter { thread in
+            thread.title?.hasPrefix("Test Thread") == true
+        }
+
+        if !testThreads.isEmpty {
+            print("🧹 Removing \(testThreads.count) test threads")
+            for thread in testThreads {
+                print("   - '\(thread.title ?? "Untitled")'")
+            }
+            personalThreads.removeAll { thread in
+                thread.title?.hasPrefix("Test Thread") == true
+            }
+            persistPersonalThreads()
+            print("✅ Test threads removed. Remaining: \(personalThreads.count) threads")
+        } else {
+            print("ℹ️ No test threads found to clean up")
+        }
     }
 
     /// Remove threads that don't belong to the current user.
@@ -44,6 +76,7 @@ actor ThreadService {
         guard let currentUserID else {
             // No user signed in - clear all threads to prevent data leakage
             if !personalThreads.isEmpty {
+                print("⚠️ Clearing \(personalThreads.count) threads - no authenticated user")
                 AppErrorReporter.log(message: "Clearing \(personalThreads.count) threads - no authenticated user", context: "ThreadService.cleanupOrphanedThreads")
                 personalThreads = []
                 persistPersonalThreads()
@@ -53,20 +86,26 @@ actor ThreadService {
 
         // Remove threads with missing, invalid, or mismatched user IDs
         let validUserIDs = [currentUserID] // Only current user's threads are valid
-        let orphanedCount = personalThreads.count(where: { thread in
+        let orphanedThreads = personalThreads.filter { thread in
             thread.userId.isEmpty ||
                 thread.userId == "local-user" ||
                 !validUserIDs.contains(thread.userId)
-        })
+        }
 
-        if orphanedCount > 0 {
-            AppErrorReporter.log(message: "Removing \(orphanedCount) orphaned threads (invalid user ID)", context: "ThreadService.cleanupOrphanedThreads")
+        if !orphanedThreads.isEmpty {
+            print("🧹 Removing \(orphanedThreads.count) orphaned threads (expected userId: \(currentUserID))")
+            for thread in orphanedThreads {
+                print("   - Thread '\(thread.title ?? "Untitled")' has userId: '\(thread.userId)'")
+            }
+            AppErrorReporter.log(message: "Removing \(orphanedThreads.count) orphaned threads (invalid user ID)", context: "ThreadService.cleanupOrphanedThreads")
             personalThreads.removeAll { thread in
                 thread.userId.isEmpty ||
                     thread.userId == "local-user" ||
                     !validUserIDs.contains(thread.userId)
             }
             persistPersonalThreads()
+        } else {
+            print("✅ All \(personalThreads.count) threads belong to current user")
         }
     }
 

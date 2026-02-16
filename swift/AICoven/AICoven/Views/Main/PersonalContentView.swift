@@ -131,6 +131,7 @@ struct PersonalContentView: View {
                     }
                 }
             )
+            .environmentObject(StoreService.shared)
         case let .memoryList(covenId):
             // Personal memory list for the local workspace (no coven).
             MemoryListView(
@@ -151,6 +152,7 @@ struct PersonalContentView: View {
             .onAppear { AnalyticsService.shared.trackMemoryProposalViewed() }
         case .store:
             StoreView()
+                .environmentObject(StoreService.shared)
         case .terms:
             TermsOfServiceView()
         default:
