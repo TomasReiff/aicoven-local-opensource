@@ -68,9 +68,11 @@ struct HomeView: View {
             _ = appState.consumeDeepLink()
         }
         .sheet(isPresented: $showCreateCoven) {
+            // Pass StoreService so CreateCovenSheet can check entitlements
             CreateCovenSheet(onCreated: { _ in
                 Task { await loadCovens() }
             })
+            .environmentObject(StoreService.shared)
         }
         .sheet(item: $shellApprovalManager.currentRequest) { request in
             ShellApprovalView(

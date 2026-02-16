@@ -174,10 +174,12 @@ struct MobilePersonalWorkspace: View {
         }
         .sheet(isPresented: $showStrixSettings) {
             NavigationStack {
+                // Pass StoreService so StrixSettingsView can check Creator entitlement
                 StrixSettingsView(onClose: {
                     // Close the sheet after saving the agent configuration.
                     showStrixSettings = false
                 })
+                .environmentObject(StoreService.shared)
             }
         }
     }
@@ -546,12 +548,14 @@ struct MobileCovensRootView: View {
                 }
             }
             .sheet(isPresented: $showCreateCoven) {
+                // Pass StoreService so CreateCovenSheet can check entitlements
                 CreateCovenSheet(onCreated: { coven in
                     Task {
                         await loadCovens()
                         selectedCovenItem = coven
                     }
                 })
+                .environmentObject(StoreService.shared)
             }
             .alert("Error", isPresented: Binding(
                 get: { errorMessage != nil },

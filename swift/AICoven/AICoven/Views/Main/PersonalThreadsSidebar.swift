@@ -151,6 +151,7 @@ struct PersonalThreadsSidebar: View {
         .background(Color.aicovenGlass.opacity(0.5))
         .animation(.easeInOut(duration: 0.2), value: isExpanded)
         .sheet(isPresented: $showStrixSettings) {
+            // Pass StoreService so StrixSettingsView can check Creator entitlement
             StrixSettingsView(onClose: {
                 // Dismiss the sheet once the agent settings have been saved.
                 showStrixSettings = false
@@ -159,6 +160,7 @@ struct PersonalThreadsSidebar: View {
                     strixSettings = try? await StrixSettingsService.shared.loadPersonalStrix()
                 }
             })
+            .environmentObject(StoreService.shared)
         }
         .task {
             // Load Strix settings on appear to display the preferred model

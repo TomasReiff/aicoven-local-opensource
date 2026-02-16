@@ -118,13 +118,13 @@ struct WorkspaceSidebarView: View {
             }
         }
         .sheet(isPresented: $showNewCovenSheet) {
-            NavigationStack {
-                NewCovenView {
-                    Task {
-                        await loadCovens()
-                    }
+            // Use CreateCovenSheet which checks Creator entitlement
+            CreateCovenSheet(onCreated: { _ in
+                Task {
+                    await loadCovens()
                 }
-            }
+            })
+            .environmentObject(StoreService.shared)
         }
         .sheet(isPresented: $showNewThreadSheet) {
             NavigationStack {
