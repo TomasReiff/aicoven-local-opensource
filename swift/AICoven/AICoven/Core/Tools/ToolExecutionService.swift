@@ -73,7 +73,6 @@ actor ToolExecutionService {
         }
 
         // 3. Entitlement Check – shell, GitHub, Google Drive require Tools Pack
-        #if !COMMUNITY_EDITION
         if requiresToolsPack(toolCall.name) {
             let entitled = await hasToolsPackEntitlement()
             if !entitled {
@@ -85,7 +84,6 @@ actor ToolExecutionService {
                 )
             }
         }
-        #endif
 
         // 4. Routing
         switch toolCall.name {

@@ -203,7 +203,7 @@ This directory contains a mix of active and legacy services:
 - `MessageAdapter.swift` – Transforms between internal message models and LLM request/response formats.
 - `MemoryService.swift` – Manages context memory storage and retrieval.
 - `ProviderAccountService.swift` – Manages provider configurations and API keys.
-- `StoreService.swift` – StoreKit 2 in-app purchase management with community edition bypass.
+- `StoreService.swift` – StoreKit 2 in-app purchase management.
 - `StrixSettingsService.swift` – Reads/writes user preferences for model and provider selection.
 - `LLMClients.swift` – Concrete `LLMClient` implementations (OpenAI, Anthropic, Gemini).
 - `AnalyticsService.swift` – Privacy-preserving, opt-in-only analytics.
@@ -255,7 +255,7 @@ The test suite includes 18 test files with 41+ test methods covering:
 
 - The README at repo root describes the overall goal of this repo as a local-only, open-source Swift client. Trust the `swift/AICoven/AICoven` tree and this file for the up-to-date architecture.
 - Covens and roles are being reintegrated into the local client. Some backend-related types (remote memory, provider accounts) remain in the tree from the original cloud app. Prefer the newer `Core/LLM`, `Core/Context`, and `Infrastructure/*` abstractions for new features.
-- The `COMMUNITY_EDITION` compile flag (set in Xcode build settings) bypasses all StoreKit billing gates. When this flag is active, all features are fully unlocked.
+- Premium features (shell, GitHub, Google Drive tools) require in-app purchases via StoreKit 2. The Store UI is shown for all builds.
 - When in doubt about where a new feature belongs:
   - Domain logic and persistence interfaces → `Core/`.
   - User-facing screens → `Features/`.

@@ -25,9 +25,9 @@ This repo started as an extraction of the original multi-tenant AICoven app and 
 
 Some files from the original cloud app remain in the codebase (e.g. covens, roles, remote memory services). Covens and roles are actively being reintegrated into the local client. These features are **not** required to use the basic local assistant.
 
-### Community Edition
+### In-App Purchases
 
-When the `COMMUNITY_EDITION` Swift active compilation condition is set (it is enabled by default in the current build settings), all billing gates are bypassed and every feature is fully unlocked. This makes the open-source build a self-contained, feature-complete client.
+Some premium features (shell tools, GitHub integration, Google Drive integration) require an in-app purchase. The StoreKit 2 purchase flow is enabled for all builds — users see the Store UI and can unlock features by making a purchase.
 
 ## High-level architecture
 
@@ -86,7 +86,7 @@ The local-first client is functional for core workflows but some features are st
 - Connected apps: GitHub and Google Drive integrations
 - Local LLM support via Ollama and on-device MLX with automatic model discovery
 - Native tool calling for API providers (OpenAI, Anthropic, Gemini) with text-based fallback for local models
-- StoreKit 2 in-app purchases with community edition bypass
+- StoreKit 2 in-app purchases for premium features
 - SwiftLint configuration (`.swiftlint.yml`) and CI workflow
 
 ### 🚧 Partially Implemented
