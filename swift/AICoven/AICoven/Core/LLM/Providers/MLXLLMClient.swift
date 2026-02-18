@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 #if canImport(MLXLLM)
 import MLXLLM
@@ -26,7 +27,7 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
     #if canImport(MLXLLM)
     /// Cache: loaded model container keyed by model ID.
     private var loadedContainers: [String: ModelContainer] = [:]
-    private let lock = NSLock()
+    private let lock = OSAllocatedUnfairLock()
     #endif
 
     init(modelID: String) {
@@ -138,12 +139,9 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
     #if canImport(MLXLLM)
     private func ensureModelLoaded(_ modelID: String) async throws -> ModelContainer {
         // Fast path: already loaded.
-        lock.lock()
-        if let existing = loadedContainers[modelID] {
-            lock.unlock()
+        if let existing = lock.withLock({ loadedContainers[modelID] }) {
             return existing
         }
-        lock.unlock()
 
         print("🧠 [MLXLLMClient] Loading \(modelID)... (first load downloads from HuggingFace)")
 
@@ -158,15 +156,13 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
 
         // Re-check under lock in case another task loaded the same model
         // concurrently. Use whichever was stored first.
-        lock.lock()
-        if let existing = loadedContainers[modelID] {
-            lock.unlock()
-            return existing
+        return lock.withLock {
+            if let existing = loadedContainers[modelID] {
+                return existing
+            }
+            loadedContainers[modelID] = container
+            return container
         }
-        loadedContainers[modelID] = container
-        lock.unlock()
-
-        return container
     }
     #endif
 
