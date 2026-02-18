@@ -279,6 +279,7 @@ struct AddProviderKeySheet: View {
     @State private var selectedOllamaModel: String = ""
     @State private var connectionTestResult: (success: Bool, message: String)? = nil
     @State private var selectedMLXModelID: String = ""
+    @State private var acceptedPrivacy = false
 
     private var isOllama: Bool {
         selectedProvider == "ollama"
@@ -381,6 +382,61 @@ struct AddProviderKeySheet: View {
                         }
                     }
 
+                    // Privacy & Consent
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Privacy & Consent")
+                            .font(.aicovenH3)
+                            .foregroundColor(.aicovenTextPrimary)
+
+                        if isOllama || isMLX {
+                            // Local providers: Informational only
+                            HStack(alignment: .top, spacing: Spacing.sm) {
+                                Image(systemName: "checkmark.shield.fill")
+                                    .foregroundColor(.green)
+                                    .font(.system(size: 16))
+                                    .padding(.top, 2)
+
+                                VStack(alignment: .leading, spacing: Spacing.xs) {
+                                    Text("Data stays on your device")
+                                        .font(.aicovenBody)
+                                        .foregroundColor(.aicovenTextPrimary)
+                                    Text("This provider runs locally. Your message content and context are never sent to external servers.")
+                                        .font(.aicovenCaption)
+                                        .foregroundColor(.aicovenTextSecondary)
+                                }
+                            }
+                            .padding(Spacing.sm)
+                            .background(Color.aicovenGlass)
+                            .cornerRadius(BorderRadius.md)
+
+                        } else {
+                            // Cloud providers: Explicit consent required
+                            Toggle(isOn: $acceptedPrivacy) {
+                                VStack(alignment: .leading, spacing: Spacing.xs) {
+                                    Text("I agree to share data with \(getProviderName(selectedProvider))")
+                                        .font(.aicovenBody)
+                                        .foregroundColor(.aicovenTextPrimary)
+
+                                    Text("By adding this key, you consent to sending message content and context to this provider for processing, subject to their privacy policy and ours.")
+                                        .font(.aicovenCaption)
+                                        .foregroundColor(.aicovenTextSecondary)
+                                }
+                            }
+                            .toggleStyle(SwitchToggleStyle(tint: .aicovenTeal))
+
+                            Link(destination: URL(string: "https://aicoven.ai/privacy")!) {
+                                HStack {
+                                    Text("Read our Privacy Policy")
+                                        .font(.aicovenCaption)
+                                        .foregroundColor(.aicovenTextTeal)
+                                    Image(systemName: "arrow.up.right.square")
+                                        .font(.aicovenCaption)
+                                        .foregroundColor(.aicovenTextTeal)
+                                }
+                            }
+                        }
+                    }
+
                     // Save button
                     GradientButton(isOllama ? "Add Ollama" : isMLX ? "Add MLX Model" : "Add Provider Key", icon: "checkmark.circle.fill", style: .primary) {
                         Task {
@@ -391,7 +447,7 @@ struct AddProviderKeySheet: View {
                 }
                 .padding(Spacing.lg)
             }
-            .background(Color.aicovenDark)
+            .background(NebulaBackground())
             .navigationTitle("Add Provider Key")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -411,7 +467,7 @@ struct AddProviderKeySheet: View {
         } else if isMLX {
             return selectedMLXModelID.isEmpty
         } else {
-            return apiKey.isEmpty
+            return apiKey.isEmpty || !acceptedPrivacy
         }
     }
 

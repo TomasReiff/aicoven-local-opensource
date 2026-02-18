@@ -226,6 +226,9 @@ actor ThreadService {
             personalThreads.append(thread)
             persistPersonalThreads()
             AnalyticsService.shared.trackThreadCreated(covenId: covenId, agentId: agentId)
+            await MainActor.run {
+                NotificationCenter.default.post(name: .didCreateThread, object: nil, userInfo: ["thread": thread])
+            }
             return thread
         } else {
             AppErrorReporter.log(message: "Creating personal thread in local store", context: "ThreadService.createThread")
@@ -250,6 +253,11 @@ actor ThreadService {
 
             // Track analytics
             AnalyticsService.shared.trackThreadCreated(covenId: nil, agentId: agentId)
+
+            // Notify listeners
+            await MainActor.run {
+                NotificationCenter.default.post(name: .didCreateThread, object: nil, userInfo: ["thread": thread])
+            }
 
             return thread
         }
@@ -348,4 +356,8 @@ actor ThreadService {
             print("🗑️ deleteThread(\(threadId)) called for unknown thread in local-only build – ignoring.")
         }
     }
+}
+
+extension Notification.Name {
+    static let didCreateThread = Notification.Name("didCreateThread")
 }

@@ -93,7 +93,7 @@ struct MobileHomeView: View {
             if isLoadingThreads {
                 CauldronLoadingView(message: "Loading workspace...", size: 80)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.aicovenDark)
+                    .background(NebulaBackground())
             } else {
                 MobilePersonalWorkspace(
                     personalThreads: $personalThreads,

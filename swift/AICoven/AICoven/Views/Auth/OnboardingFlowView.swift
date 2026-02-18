@@ -359,9 +359,18 @@ private struct PrivacyStepView: View {
             }
 
             Toggle(isOn: $accepted) {
-                Text("I understand that if I lose my encryption keys, AICoven cannot recover my data.")
-                    .font(.aicovenBodySmall)
-                    .foregroundColor(.aicovenTextSecondary)
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("I understand that if I lose my encryption keys, AICoven cannot recover my data.")
+                        .font(.aicovenBodySmall)
+                        .foregroundColor(.aicovenTextSecondary)
+
+                    Link(destination: URL(string: "https://aicoven.ai/privacy")!) {
+                        Text("Read our Privacy Policy")
+                            .font(.aicovenCaption)
+                            .foregroundColor(.aicovenTeal)
+                            .underline()
+                    }
+                }
             }
             .onChange(of: accepted) { _, newValue in
                 if newValue {
@@ -395,7 +404,7 @@ private struct KeysStepView: View {
             InfoCard(
                 icon: "wand.and.stars",
                 title: "Add Your Provider Keys",
-                text: "AICoven doesn't resell AI models. You'll connect your own API keys so you stay in control of cost, data, and model choice."
+                text: "AICoven doesn't resell AI models. You'll connect your own API keys. Data is sent to providers only when you interact with them."
             )
 
             InfoCard(
@@ -447,7 +456,7 @@ private struct KeysStepView: View {
                 .foregroundColor(.aicovenTextSecondary)
 
             Toggle(isOn: $accepted) {
-                Text("I understand that I am responsible for my own API billing and usage across connected providers.")
+                Text("I understand that I am responsible for my own API billing and consent to my data being sent to connected providers.")
                     .font(.aicovenBodySmall)
                     .foregroundColor(.aicovenTextSecondary)
             }

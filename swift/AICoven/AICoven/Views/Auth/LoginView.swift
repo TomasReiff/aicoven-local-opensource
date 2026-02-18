@@ -26,8 +26,7 @@ struct LoginView: View {
 
     var body: some View {
         ZStack {
-            Color.aicovenDark
-                .ignoresSafeArea()
+            NebulaBackground()
 
             if mode == .signup {
                 signupContent
