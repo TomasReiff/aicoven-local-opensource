@@ -453,10 +453,10 @@ struct AddProviderKeySheet: View {
                     HStack {
                         Text("Read our Privacy Policy")
                             .font(.aicovenCaption)
-                            .foregroundColor(.aicovenTextTeal)
+                            .foregroundColor(.aicovenTeal)
                         Image(systemName: "arrow.up.right.square")
                             .font(.aicovenCaption)
-                            .foregroundColor(.aicovenTextTeal)
+                            .foregroundColor(.aicovenTeal)
                     }
                 }
             }
