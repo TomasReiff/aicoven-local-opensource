@@ -479,7 +479,7 @@ actor ToolExecutionService {
             \(body.isEmpty ? "(No description)" : body)
             """
 
-            return .success(
+            return await .success(
                 tool: toolCall.name,
                 result: [
                     "number": AnyJSONValue(pullNumber),
@@ -497,7 +497,7 @@ actor ToolExecutionService {
     /// Execute github.listPRFiles - list files changed in a pull request with patches
     private func executeGitHubListPRFiles(toolCall: ParsedToolCall) async -> ToolExecutionResult {
         guard let account = await connectedAccountsService.getConnectedAccount(for: .github) else {
-            return .error(tool: toolCall.name, message: "GitHub not connected. Please connect GitHub in Settings > Connected Apps.")
+            return await .error(tool: toolCall.name, message: "GitHub not connected. Please connect GitHub in Settings > Connected Apps.")
         }
 
         guard let owner = extractString(from: toolCall.args, key: "owner"),
@@ -518,7 +518,7 @@ actor ToolExecutionService {
                   let num = Int(numStr) {
             pullNumber = num
         } else {
-            return .validationError(tool: toolCall.name, message: "Missing required argument: 'pull_number'")
+            return await .validationError(tool: toolCall.name, message: "Missing required argument: 'pull_number'")
         }
 
         do {
@@ -552,13 +552,13 @@ actor ToolExecutionService {
 
             let block = "[GitHub PR #\(pullNumber) Files (\(files.count) changed)]\n\n" + fileDetails.joined(separator: "\n\n")
 
-            return .success(
+            return await .success(
                 tool: toolCall.name,
                 result: ["count": AnyJSONValue(files.count)],
                 contextBlock: block
             )
         } catch {
-            return .error(tool: toolCall.name, message: error.localizedDescription)
+            return await .error(tool: toolCall.name, message: error.localizedDescription)
         }
     }
 
@@ -576,20 +576,20 @@ actor ToolExecutionService {
             let response = try await googleDriveService.listFiles(accountId: account.id, query: query)
             let fileNames = response.files.map { "\($0.name) (\($0.mimeType ?? "unknown"))" }
             let block = "[Google Drive Files]\n" + fileNames.joined(separator: "\n")
-            return .success(tool: toolCall.name, result: ["count": AnyJSONValue(response.files.count)], contextBlock: block)
+            return await .success(tool: toolCall.name, result: ["count": AnyJSONValue(response.files.count)], contextBlock: block)
         } catch {
-            return .error(tool: toolCall.name, message: error.localizedDescription)
+            return await .error(tool: toolCall.name, message: error.localizedDescription)
         }
     }
 
     /// Execute google_drive.readFile
     private func executeGoogleDriveReadFile(toolCall: ParsedToolCall) async -> ToolExecutionResult {
         guard let account = await connectedAccountsService.getConnectedAccount(for: .googleDrive) else {
-            return .error(tool: toolCall.name, message: "Google Drive not connected.")
+            return await .error(tool: toolCall.name, message: "Google Drive not connected.")
         }
 
         guard let fileId = extractString(from: toolCall.args, key: "file_id") ?? extractString(from: toolCall.args, key: "fileId") else {
-            return .validationError(tool: toolCall.name, message: "Missing required argument: 'file_id'")
+            return await .validationError(tool: toolCall.name, message: "Missing required argument: 'file_id'")
         }
 
         let exportMimeType = extractString(from: toolCall.args, key: "export_mime_type") ?? "text/plain"
@@ -602,21 +602,21 @@ actor ToolExecutionService {
             )
             let content = String(data: data, encoding: .utf8) ?? "<binary content>"
             let block = "[Google Drive File: \(fileId)]\n\(content.prefix(5000))"
-            return .success(tool: toolCall.name, result: ["file_id": AnyJSONValue(fileId)], contextBlock: block)
+            return await .success(tool: toolCall.name, result: ["file_id": AnyJSONValue(fileId)], contextBlock: block)
         } catch {
-            return .error(tool: toolCall.name, message: error.localizedDescription)
+            return await .error(tool: toolCall.name, message: error.localizedDescription)
         }
     }
 
     /// Execute google_drive.uploadFile
     private func executeGoogleDriveUploadFile(toolCall: ParsedToolCall) async -> ToolExecutionResult {
         guard let account = await connectedAccountsService.getConnectedAccount(for: .googleDrive) else {
-            return .error(tool: toolCall.name, message: "Google Drive not connected.")
+            return await .error(tool: toolCall.name, message: "Google Drive not connected.")
         }
 
         guard let name = extractString(from: toolCall.args, key: "name"),
               let content = extractString(from: toolCall.args, key: "content") else {
-            return .validationError(tool: toolCall.name, message: "Missing required arguments: 'name', 'content'")
+            return await .validationError(tool: toolCall.name, message: "Missing required arguments: 'name', 'content'")
         }
 
         let mimeType = extractString(from: toolCall.args, key: "mime_type") ?? "text/plain"
@@ -629,21 +629,21 @@ actor ToolExecutionService {
                 content: content.data(using: .utf8) ?? Data()
             )
             let block = "[Google Drive File Uploaded]\nName: \(file.name)\nID: \(file.id)"
-            return .success(tool: toolCall.name, result: ["file_id": AnyJSONValue(file.id)], contextBlock: block)
+            return await .success(tool: toolCall.name, result: ["file_id": AnyJSONValue(file.id)], contextBlock: block)
         } catch {
-            return .error(tool: toolCall.name, message: error.localizedDescription)
+            return await .error(tool: toolCall.name, message: error.localizedDescription)
         }
     }
 
     /// Execute google_sheets.readValues
     private func executeGoogleSheetsReadValues(toolCall: ParsedToolCall) async -> ToolExecutionResult {
         guard let account = await connectedAccountsService.getConnectedAccount(for: .googleDrive) else {
-            return .error(tool: toolCall.name, message: "Google Drive not connected.")
+            return await .error(tool: toolCall.name, message: "Google Drive not connected.")
         }
 
         guard let spreadsheetId = extractString(from: toolCall.args, key: "spreadsheet_id") ?? extractString(from: toolCall.args, key: "spreadsheetId"),
               let range = extractString(from: toolCall.args, key: "range") else {
-            return .validationError(tool: toolCall.name, message: "Missing required arguments: 'spreadsheet_id', 'range'")
+            return await .validationError(tool: toolCall.name, message: "Missing required arguments: 'spreadsheet_id', 'range'")
         }
 
         do {
@@ -654,26 +654,26 @@ actor ToolExecutionService {
             )
             let formatted = values.map { $0.joined(separator: "\t") }.joined(separator: "\n")
             let block = "[Google Sheets: \(range)]\n\(formatted)"
-            return .success(tool: toolCall.name, result: ["row_count": AnyJSONValue(values.count)], contextBlock: block)
+            return await .success(tool: toolCall.name, result: ["row_count": AnyJSONValue(values.count)], contextBlock: block)
         } catch {
-            return .error(tool: toolCall.name, message: error.localizedDescription)
+            return await .error(tool: toolCall.name, message: error.localizedDescription)
         }
     }
 
     /// Execute google_sheets.writeValues
     private func executeGoogleSheetsWriteValues(toolCall: ParsedToolCall) async -> ToolExecutionResult {
         guard let account = await connectedAccountsService.getConnectedAccount(for: .googleDrive) else {
-            return .error(tool: toolCall.name, message: "Google Drive not connected.")
+            return await .error(tool: toolCall.name, message: "Google Drive not connected.")
         }
 
         guard let spreadsheetId = extractString(from: toolCall.args, key: "spreadsheet_id") ?? extractString(from: toolCall.args, key: "spreadsheetId"),
               let range = extractString(from: toolCall.args, key: "range") else {
-            return .validationError(tool: toolCall.name, message: "Missing required arguments: 'spreadsheet_id', 'range'")
+            return await .validationError(tool: toolCall.name, message: "Missing required arguments: 'spreadsheet_id', 'range'")
         }
 
         // Parse values from args - expecting array of arrays
         guard let valuesArg = toolCall.args["values"]?.value as? [[Any]] else {
-            return .validationError(tool: toolCall.name, message: "Missing or invalid 'values' argument (expected array of arrays)")
+            return await .validationError(tool: toolCall.name, message: "Missing or invalid 'values' argument (expected array of arrays)")
         }
 
         let values = valuesArg.map { row in row.map { String(describing: $0) } }
@@ -686,9 +686,9 @@ actor ToolExecutionService {
                 values: values
             )
             let block = "[Google Sheets Updated: \(range)]\nWrote \(values.count) rows"
-            return .success(tool: toolCall.name, result: ["updated_rows": AnyJSONValue(values.count)], contextBlock: block)
+            return await .success(tool: toolCall.name, result: ["updated_rows": AnyJSONValue(values.count)], contextBlock: block)
         } catch {
-            return .error(tool: toolCall.name, message: error.localizedDescription)
+            return await .error(tool: toolCall.name, message: error.localizedDescription)
         }
     }
 
@@ -705,7 +705,7 @@ actor ToolExecutionService {
             // Use ToolService.shared directly to avoid iOS initialization issues
             let result = try await ToolService.shared.webBrowse(url: url)
             let block = "[Web Browse: \(result.title ?? "No Title")]\nURL: \(result.url.absoluteString)\n\n\(result.content)"
-            return .success(
+            return await .success(
                 tool: toolName,
                 result: [
                     "url": AnyJSONValue(result.url.absoluteString),
@@ -719,7 +719,7 @@ actor ToolExecutionService {
             let message = "Web browse failed: \(error.localizedDescription) (domain: \(error.domain), code: \(error.code))"
             return .error(tool: toolName, message: message)
         } catch {
-            return .error(tool: toolName, message: "Web browse failed: \(error.localizedDescription)")
+            return await .error(tool: toolName, message: "Web browse failed: \(error.localizedDescription)")
         }
     }
 
