@@ -361,6 +361,34 @@ private extension LoginView {
                     .padding(.bottom, 40)
                 }
                 .frame(maxWidth: .infinity)
+
+                // Footer with Terms & Privacy
+                VStack(spacing: Spacing.xs) {
+                    Text("By continuing, you agree to our")
+                        .font(.aicovenCaption)
+                        .foregroundColor(.aicovenTextSecondary)
+
+                    HStack(spacing: Spacing.xs) {
+                        NavigationLink(destination: TermsOfServiceView()) {
+                            Text("Terms of Service")
+                                .font(.aicovenCaption)
+                                .foregroundColor(.aicovenTeal)
+                                .underline()
+                        }
+
+                        Text("and")
+                            .font(.aicovenCaption)
+                            .foregroundColor(.aicovenTextSecondary)
+
+                        NavigationLink(destination: PrivacyPolicyView()) {
+                            Text("Privacy Policy")
+                                .font(.aicovenCaption)
+                                .foregroundColor(.aicovenTeal)
+                                .underline()
+                        }
+                    }
+                }
+                .padding(.bottom, Spacing.lg)
             }
         }
     }
@@ -529,6 +557,34 @@ private extension LoginView {
                     .padding(.bottom, 40)
                 }
                 .frame(maxWidth: .infinity)
+
+                // Footer with Terms & Privacy
+                VStack(spacing: Spacing.xs) {
+                    Text("By continuing, you agree to our")
+                        .font(.aicovenCaption)
+                        .foregroundColor(.aicovenTextSecondary)
+
+                    HStack(spacing: Spacing.xs) {
+                        NavigationLink(destination: TermsOfServiceView()) {
+                            Text("Terms of Service")
+                                .font(.aicovenCaption)
+                                .foregroundColor(.aicovenTeal)
+                                .underline()
+                        }
+
+                        Text("and")
+                            .font(.aicovenCaption)
+                            .foregroundColor(.aicovenTextSecondary)
+
+                        NavigationLink(destination: PrivacyPolicyView()) {
+                            Text("Privacy Policy")
+                                .font(.aicovenCaption)
+                                .foregroundColor(.aicovenTeal)
+                                .underline()
+                        }
+                    }
+                }
+                .padding(.bottom, Spacing.lg)
             }
         }
     }

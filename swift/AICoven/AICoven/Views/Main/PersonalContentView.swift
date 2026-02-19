@@ -155,6 +155,8 @@ struct PersonalContentView: View {
                 .environmentObject(StoreService.shared)
         case .terms:
             TermsOfServiceView()
+        case .privacy:
+            PrivacyPolicyView()
         default:
             EmptyView()
         }
@@ -194,6 +196,8 @@ struct PersonalContentView: View {
             tab = .store
         case .terms:
             tab = .terms
+        case .privacy:
+            tab = .privacy
         default:
             return
         }

@@ -370,6 +370,13 @@ private struct PrivacyStepView: View {
                             .foregroundColor(.aicovenTeal)
                             .underline()
                     }
+
+                    NavigationLink(destination: TermsOfServiceView()) {
+                        Text("Read our Terms of Service")
+                            .font(.aicovenCaption)
+                            .foregroundColor(.aicovenTeal)
+                            .underline()
+                    }
                 }
             }
             .onChange(of: accepted) { _, newValue in
