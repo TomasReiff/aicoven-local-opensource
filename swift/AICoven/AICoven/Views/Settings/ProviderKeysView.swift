@@ -405,7 +405,9 @@ private struct AddProviderKeyStep2View: View {
         }
         .background(NebulaBackground())
         .navigationTitle(providerDisplayName)
-        .navigationBarTitleDisplayMode(.inline)
+        #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 
     // MARK: - Privacy disclosure (always first)

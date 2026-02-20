@@ -940,6 +940,15 @@ struct MobileProfileRootView: View {
                                 .foregroundColor(.aicovenTeal)
                         }
                     }
+
+                    Section("Legal") {
+                        NavigationLink(destination: TermsOfServiceView()) {
+                            Label("Terms & Conditions", systemImage: "doc.text")
+                        }
+                        NavigationLink(destination: PrivacyPolicyView()) {
+                            Label("Privacy Policy", systemImage: "hand.raised")
+                        }
+                    }
                 }
                 .scrollContentBackground(.hidden)
             }
