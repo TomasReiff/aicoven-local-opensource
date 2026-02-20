@@ -264,12 +264,94 @@ struct ProviderAccountCard: View {
     }
 }
 
-/// Add provider key sheet
+/// Add provider key sheet — Step 1: choose a provider
 struct AddProviderKeySheet: View {
     @Environment(\.dismiss) private var dismiss
     let onComplete: () -> Void
 
     @State private var selectedProvider = "openai"
+    @State private var showStep2 = false
+
+    let providers = [
+        ("openai", "OpenAI", "🤖"),
+        ("anthropic", "Anthropic Claude", "🟣"),
+        ("google", "Google Gemini", "🔵"),
+        ("ollama", "Ollama (Local)", "🦙"),
+        ("mlx", "MLX (On-Device)", "🧠")
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: Spacing.lg) {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Choose a Provider")
+                            .font(.aicovenH3)
+                            .foregroundColor(.aicovenTextPrimary)
+
+                        Text("Select the AI provider whose API key you want to add.")
+                            .font(.aicovenCaption)
+                            .foregroundColor(.aicovenTextSecondary)
+
+                        ForEach(providers, id: \.0) { provider in
+                            Button {
+                                selectedProvider = provider.0
+                            } label: {
+                                HStack {
+                                    Text(provider.2)
+                                        .font(.system(size: 24))
+
+                                    Text(provider.1)
+                                        .font(.aicovenBody)
+                                        .foregroundColor(.aicovenTextPrimary)
+
+                                    Spacer()
+
+                                    if selectedProvider == provider.0 {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.aicovenTeal)
+                                    }
+                                }
+                                .padding(Spacing.md)
+                                .background(
+                                    RoundedRectangle(cornerRadius: BorderRadius.md)
+                                        .fill(selectedProvider == provider.0 ? Color.aicovenGlass : Color.clear)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    GradientButton("Continue", icon: "arrow.right.circle.fill", style: .primary) {
+                        showStep2 = true
+                    }
+                }
+                .padding(Spacing.lg)
+            }
+            .background(NebulaBackground())
+            .navigationTitle("Add Provider Key")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .navigationDestination(isPresented: $showStep2) {
+                AddProviderKeyStep2View(
+                    selectedProvider: selectedProvider,
+                    onComplete: onComplete
+                )
+            }
+        }
+    }
+
+}
+
+/// Step 2: privacy disclosure (pinned at top) + provider-specific configuration
+private struct AddProviderKeyStep2View: View {
+    @Environment(\.dismiss) private var dismiss
+    let selectedProvider: String
+    let onComplete: () -> Void
+
     @State private var displayName = ""
     @State private var apiKey = ""
     @State private var baseURL = "http://localhost:11434"
@@ -289,96 +371,124 @@ struct AddProviderKeySheet: View {
         selectedProvider == "mlx"
     }
 
-    let providers = [
-        ("openai", "OpenAI", "🤖"),
-        ("anthropic", "Anthropic Claude", "🟣"),
-        ("google", "Google Gemini", "🔵"),
-        ("ollama", "Ollama (Local)", "🦙"),
-        ("mlx", "MLX (On-Device)", "🧠")
-    ]
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: Spacing.lg) {
-                    providerSelectionView
-                    displayNameView
-                    configurationView
-                    privacyView
-                    saveButton
-                }
-                .padding(Spacing.lg)
-            }
-            .background(NebulaBackground())
-            .navigationTitle("Add Provider Key")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-        }
+    private var isLocal: Bool {
+        isOllama || isMLX
     }
 
-    private var providerSelectionView: some View {
+    var body: some View {
+        ScrollView {
+            VStack(spacing: Spacing.lg) {
+                // Privacy disclosure is the very first thing shown — impossible to miss
+                privacyView
+
+                // Display name
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text("Display Name")
+                        .font(.aicovenH3)
+                        .foregroundColor(.aicovenTextPrimary)
+
+                    TextField(isOllama ? "My Ollama" : isMLX ? "My Local LLM" : "My API Key", text: $displayName)
+                        .font(.aicovenBody)
+                        .foregroundColor(.aicovenTextPrimary)
+                        .padding(Spacing.md)
+                        .background(Color.aicovenGlass)
+                        .cornerRadius(BorderRadius.md)
+                }
+
+                // Provider-specific configuration
+                configurationView
+
+                // Save button
+                saveButton
+            }
+            .padding(Spacing.lg)
+        }
+        .background(NebulaBackground())
+        .navigationTitle(providerDisplayName)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Privacy disclosure (always first)
+
+    private var privacyView: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("Provider")
+            Text("Privacy & Data Sharing")
                 .font(.aicovenH3)
                 .foregroundColor(.aicovenTextPrimary)
 
-            ForEach(providers, id: \.0) { provider in
-                Button {
-                    selectedProvider = provider.0
-                    // Reset state when switching providers
-                    if provider.0 != "ollama" {
-                        ollamaModels = []
-                        connectionTestResult = nil
-                    }
-                    if provider.0 != "mlx" {
-                        selectedMLXModelID = ""
-                    }
-                } label: {
-                    HStack {
-                        Text(provider.2)
-                            .font(.system(size: 24))
+            if isLocal {
+                HStack(alignment: .top, spacing: Spacing.sm) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .foregroundColor(.green)
+                        .font(.system(size: 20))
+                        .padding(.top, 2)
 
-                        Text(provider.1)
-                            .font(.aicovenBody)
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("Your data stays on this device")
+                            .font(.aicovenBodySmall)
+                            .foregroundColor(.aicovenTextPrimary)
+                            .fontWeight(.semibold)
+                        Text("This provider runs locally. Your message content and conversation context are never sent to any external server.")
+                            .font(.aicovenCaption)
+                            .foregroundColor(.aicovenTextSecondary)
+                    }
+                }
+                .padding(Spacing.md)
+                .background(Color.green.opacity(0.12))
+                .cornerRadius(BorderRadius.md)
+                .overlay(
+                    RoundedRectangle(cornerRadius: BorderRadius.md)
+                        .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                )
+
+            } else {
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Label("What data is sent", systemImage: "paperplane.fill")
+                            .font(.aicovenBodySmall)
+                            .fontWeight(.semibold)
                             .foregroundColor(.aicovenTextPrimary)
 
-                        Spacer()
+                        Text("Your message content and conversation context will be sent to \(providerDisplayName) for AI processing. No other personal data (account details, contacts, etc.) is shared.")
+                            .font(.aicovenCaption)
+                            .foregroundColor(.aicovenTextSecondary)
 
-                        if selectedProvider == provider.0 {
-                            Image(systemName: "checkmark.circle.fill")
+                        Label("Who receives it", systemImage: "person.crop.circle.fill")
+                            .font(.aicovenBodySmall)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.aicovenTextPrimary)
+
+                        Text("\(providerDisplayName) — subject to their privacy policy. AICoven does not store or access your message content on its servers.")
+                            .font(.aicovenCaption)
+                            .foregroundColor(.aicovenTextSecondary)
+                    }
+                    .padding(Spacing.md)
+                    .background(Color.aicovenGlass)
+                    .cornerRadius(BorderRadius.md)
+
+                    Toggle(isOn: $acceptedPrivacy) {
+                        Text("I consent to sharing my message content and conversation context with \(providerDisplayName) for AI processing")
+                            .font(.aicovenCaption)
+                            .foregroundColor(.aicovenTextPrimary)
+                    }
+                    .toggleStyle(SwitchToggleStyle(tint: .aicovenTeal))
+
+                    Link(destination: URL(string: "https://aicoven.ai/privacy")!) {
+                        HStack(spacing: Spacing.xs) {
+                            Text("Read AICoven's Privacy Policy")
+                                .font(.aicovenCaption)
+                                .foregroundColor(.aicovenTeal)
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.aicovenCaption)
                                 .foregroundColor(.aicovenTeal)
                         }
                     }
-                    .padding(Spacing.md)
-                    .background(
-                        RoundedRectangle(cornerRadius: BorderRadius.md)
-                            .fill(selectedProvider == provider.0 ? Color.aicovenGlass : Color.clear)
-                    )
                 }
-                .buttonStyle(.plain)
             }
         }
     }
 
-    private var displayNameView: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("Display Name")
-                .font(.aicovenH3)
-                .foregroundColor(.aicovenTextPrimary)
-
-            TextField(isOllama ? "My Ollama" : isMLX ? "My Local LLM" : "My API Key", text: $displayName)
-                .font(.aicovenBody)
-                .foregroundColor(.aicovenTextPrimary)
-                .padding(Spacing.md)
-                .background(Color.aicovenGlass)
-                .cornerRadius(BorderRadius.md)
-        }
-    }
+    // MARK: - Configuration
 
     @ViewBuilder
     private var configurationView: some View {
@@ -387,7 +497,6 @@ struct AddProviderKeySheet: View {
         } else if isMLX {
             mlxConfigSection
         } else {
-            // API key (cloud providers)
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("API Key")
                     .font(.aicovenH3)
@@ -400,96 +509,38 @@ struct AddProviderKeySheet: View {
                     .background(Color.aicovenGlass)
                     .cornerRadius(BorderRadius.md)
 
-                Text("🔒 Your API key is encrypted and stored securely")
+                Text("🔒 Your API key is encrypted and stored securely on this device")
                     .font(.aicovenCaption)
                     .foregroundColor(.aicovenTextSecondary)
             }
         }
     }
 
-    private var privacyView: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("Privacy & Consent")
-                .font(.aicovenH3)
-                .foregroundColor(.aicovenTextPrimary)
-
-            if isOllama || isMLX {
-                // Local providers: Informational only
-                HStack(alignment: .top, spacing: Spacing.sm) {
-                    Image(systemName: "checkmark.shield.fill")
-                        .foregroundColor(.green)
-                        .font(.system(size: 16))
-                        .padding(.top, 2)
-
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("Data stays on your device")
-                            .font(.aicovenBody)
-                            .foregroundColor(.aicovenTextPrimary)
-                        Text("This provider runs locally. Your message content and context are never sent to external servers.")
-                            .font(.aicovenCaption)
-                            .foregroundColor(.aicovenTextSecondary)
-                    }
-                }
-                .padding(Spacing.sm)
-                .background(Color.aicovenGlass)
-                .cornerRadius(BorderRadius.md)
-
-            } else {
-                // Cloud providers: Explicit consent required
-                Toggle(isOn: $acceptedPrivacy) {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text("I agree to share data with \(getProviderName(selectedProvider))")
-                            .font(.aicovenBody)
-                            .foregroundColor(.aicovenTextPrimary)
-
-                        Text("By adding this key, you consent to sending message content and context to this provider for processing, subject to their privacy policy and ours.")
-                            .font(.aicovenCaption)
-                            .foregroundColor(.aicovenTextSecondary)
-                    }
-                }
-                .toggleStyle(SwitchToggleStyle(tint: .aicovenTeal))
-
-                Link(destination: URL(string: "https://aicoven.ai/privacy")!) {
-                    HStack {
-                        Text("Read our Privacy Policy")
-                            .font(.aicovenCaption)
-                            .foregroundColor(.aicovenTeal)
-                        Image(systemName: "arrow.up.right.square")
-                            .font(.aicovenCaption)
-                            .foregroundColor(.aicovenTeal)
-                    }
-                }
-            }
-        }
-    }
+    // MARK: - Save
 
     private var saveButton: some View {
-        GradientButton(isOllama ? "Add Ollama" : isMLX ? "Add MLX Model" : "Add Provider Key", icon: "checkmark.circle.fill", style: .primary) {
-            Task {
-                await saveProviderKey()
-            }
+        GradientButton(
+            isOllama ? "Add Ollama" : isMLX ? "Add MLX Model" : "Add Provider Key",
+            icon: "checkmark.circle.fill",
+            style: .primary
+        ) {
+            Task { await saveProviderKey() }
         }
         .disabled(saveDisabled)
-
     }
 
     private var saveDisabled: Bool {
         if saving { return true }
         if displayName.isEmpty { return true }
-        if isOllama {
-            return baseURL.isEmpty || selectedOllamaModel.isEmpty
-        } else if isMLX {
-            return selectedMLXModelID.isEmpty
-        } else {
-            return apiKey.isEmpty || !acceptedPrivacy
-        }
+        if isOllama { return baseURL.isEmpty || selectedOllamaModel.isEmpty }
+        if isMLX { return selectedMLXModelID.isEmpty }
+        return apiKey.isEmpty || !acceptedPrivacy
     }
 
     // MARK: - Ollama config section
 
     private var ollamaConfigSection: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            // Base URL
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Server URL")
                     .font(.aicovenH3)
@@ -530,7 +581,6 @@ struct AddProviderKeySheet: View {
                     .foregroundColor(.aicovenTextSecondary)
             }
 
-            // Connection test result
             if let result = connectionTestResult {
                 HStack {
                     Image(systemName: result.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
@@ -542,7 +592,6 @@ struct AddProviderKeySheet: View {
                 .padding(.vertical, Spacing.xs)
             }
 
-            // Model picker (shown after successful connection)
             if !ollamaModels.isEmpty {
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     Text("Model")
@@ -569,9 +618,7 @@ struct AddProviderKeySheet: View {
                                             .foregroundColor(.aicovenTextTertiary)
                                     }
                                 }
-
                                 Spacer()
-
                                 if selectedOllamaModel == model.name {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundColor(.aicovenTeal)
@@ -636,9 +683,7 @@ struct AddProviderKeySheet: View {
                                     .font(.aicovenCaption)
                                     .foregroundColor(.aicovenTextTertiary)
                                 }
-
                                 Spacer()
-
                                 if selectedMLXModelID == model.id {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundColor(.aicovenTeal)
@@ -661,6 +706,19 @@ struct AddProviderKeySheet: View {
         }
     }
 
+    // MARK: - Helpers
+
+    private var providerDisplayName: String {
+        switch selectedProvider {
+        case "openai": "OpenAI"
+        case "anthropic": "Anthropic Claude"
+        case "google": "Google Gemini"
+        case "ollama": "Ollama (Local)"
+        case "mlx": "MLX (On-Device)"
+        default: selectedProvider.capitalized
+        }
+    }
+
     func testOllamaConnection() async {
         isLoadingModels = true
         defer { isLoadingModels = false }
@@ -672,9 +730,7 @@ struct AddProviderKeySheet: View {
             do {
                 let models = try await client.discoverModels()
                 ollamaModels = models
-                if let first = models.first {
-                    selectedOllamaModel = first.name
-                }
+                if let first = models.first { selectedOllamaModel = first.name }
                 connectionTestResult = (true, "Connected! Found \(models.count) model(s).")
             } catch {
                 connectionTestResult = (false, "Connected but failed to list models: \(error.localizedDescription)")
@@ -684,7 +740,6 @@ struct AddProviderKeySheet: View {
         }
     }
 
-    /// Save provider key
     private func saveProviderKey() async {
         saving = true
         defer { saving = false }
@@ -718,17 +773,6 @@ struct AddProviderKeySheet: View {
 
         } catch {
             AppErrorReporter.log(error: error, context: "ProviderKeysView.saveProviderKey")
-        }
-    }
-
-    private func getProviderName(_ id: String) -> String {
-        switch id {
-        case "openai": "OpenAI"
-        case "anthropic": "Anthropic"
-        case "google": "Google"
-        case "ollama": "Ollama"
-        case "mlx": "MLX"
-        default: id.capitalized
         }
     }
 }
