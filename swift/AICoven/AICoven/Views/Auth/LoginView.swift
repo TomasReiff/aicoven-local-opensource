@@ -19,6 +19,8 @@ struct LoginView: View {
     @State private var confirmPasswordFieldFocused = false
     @State private var isPasswordVisible = false
     @State private var isConfirmPasswordVisible = false
+    @State private var showTermsOfService = false
+    @State private var showPrivacyPolicy = false
 
     enum AuthMode {
         case signin, signup
@@ -41,6 +43,30 @@ struct LoginView: View {
         }
         .sheet(isPresented: $showForgotPassword) {
             ForgotPasswordView()
+        }
+        .sheet(isPresented: $showTermsOfService) {
+            NavigationStack {
+                TermsOfServiceView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") {
+                                showTermsOfService = false
+                            }
+                        }
+                    }
+            }
+        }
+        .sheet(isPresented: $showPrivacyPolicy) {
+            NavigationStack {
+                PrivacyPolicyView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") {
+                                showPrivacyPolicy = false
+                            }
+                        }
+                    }
+            }
         }
     }
 
@@ -369,7 +395,7 @@ private extension LoginView {
                         .foregroundColor(.aicovenTextSecondary)
 
                     HStack(spacing: Spacing.xs) {
-                        NavigationLink(destination: TermsOfServiceView()) {
+                        Button { self.showTermsOfService = true } label: {
                             Text("Terms of Service")
                                 .font(.aicovenCaption)
                                 .foregroundColor(.aicovenTeal)
@@ -380,13 +406,14 @@ private extension LoginView {
                             .font(.aicovenCaption)
                             .foregroundColor(.aicovenTextSecondary)
 
-                        NavigationLink(destination: PrivacyPolicyView()) {
+                        Button { self.showPrivacyPolicy = true } label: {
                             Text("Privacy Policy")
                                 .font(.aicovenCaption)
                                 .foregroundColor(.aicovenTeal)
                                 .underline()
                         }
                     }
+                    .buttonStyle(.plain)
                 }
                 .padding(.bottom, Spacing.lg)
             }
@@ -565,7 +592,7 @@ private extension LoginView {
                         .foregroundColor(.aicovenTextSecondary)
 
                     HStack(spacing: Spacing.xs) {
-                        NavigationLink(destination: TermsOfServiceView()) {
+                        Button { self.showTermsOfService = true } label: {
                             Text("Terms of Service")
                                 .font(.aicovenCaption)
                                 .foregroundColor(.aicovenTeal)
@@ -576,13 +603,14 @@ private extension LoginView {
                             .font(.aicovenCaption)
                             .foregroundColor(.aicovenTextSecondary)
 
-                        NavigationLink(destination: PrivacyPolicyView()) {
+                        Button { self.showPrivacyPolicy = true } label: {
                             Text("Privacy Policy")
                                 .font(.aicovenCaption)
                                 .foregroundColor(.aicovenTeal)
                                 .underline()
                         }
                     }
+                    .buttonStyle(.plain)
                 }
                 .padding(.bottom, Spacing.lg)
             }
