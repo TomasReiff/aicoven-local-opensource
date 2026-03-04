@@ -41,15 +41,20 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
         let effectiveModel = model.isEmpty ? defaultModelID : model
         let container = try await ensureModelLoaded(effectiveModel)
 
-        // Convert messages to MLX format
-        let prompt = Self.composeConversationPrompt(from: messages)
+        // Convert LLMMessages to MLXLMCommon's structured Chat.Message format.
+        // This properly applies the model's chat template, including system
+        // messages (tool docs, instructions, policies) that were previously
+        // silently dropped by the old flat-prompt approach.
+        let chatMessages = Self.toChatMessages(from: messages)
+        let userInput = UserInput(chat: chatMessages)
         let maxTokens = options.maxTokens ?? 1024
 
-        // Generate using MLX's perform + generate pattern
-        // The container.perform block gives us a ModelContext for generation
-        let result = try await container.perform { context in
-            // Prepare the input using the context's processor
-            let input = try await context.processor.prepare(input: .init(prompt: prompt))
+        // Generate using MLX's perform + generate pattern.
+        // The container.perform block gives us a ModelContext for generation.
+        let result = try await container.perform { [userInput] context in
+            // Prepare the input using the context's processor, which applies
+            // the model's chat template (e.g. Qwen3, Mistral, Llama formats).
+            let input = try await context.processor.prepare(input: userInput)
 
             // Set up generation parameters
             let parameters = GenerateParameters(maxTokens: maxTokens)
@@ -66,9 +71,9 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
             }
         }
 
-        // Extract token counts from result
-        // GenerateResult provides promptTokenCount but not completion count directly
-        // Estimate completion tokens from output length (roughly 4 chars per token)
+        // Extract token counts from result.
+        // GenerateResult provides promptTokenCount but not completion count directly.
+        // Estimate completion tokens from output length (roughly 4 chars per token).
         let estimatedCompletionTokens = max(1, result.output.count / 4)
         let usage = LLMTokenUsage(
             promptTokens: result.promptTokenCount,
@@ -98,19 +103,9 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    let container = try await ensureModelLoaded(model)
-                    let prompt = Self.composeConversationPrompt(from: messages)
-
-                    // Streaming generation
-                    // perform is async, so we await it
-                    // But MLX might not support easy streaming in the high level API yet without callback
-                    // For now, let's fallback to non-streaming if needed, OR use the generator's stream
-
-                    // Simplified implementation: MLX's high level generate() often yields tokens
-                    // Here we assume we can just wait for full response if stream not easy
-                    // Re-using completeChat for now as the 'simple' local version
-                    // TODO: Implement true token streaming with MLX
-
+                    // Delegate to completeChat which uses the structured
+                    // Chat.Message format (system messages included).
+                    // TODO: Implement true token-by-token streaming with MLX
                     let response = try await completeChat(messages: messages, model: model, options: options)
                     continuation.yield(LLMStreamDelta(text: response.message.content, isFinished: true, usage: response.usage))
                     continuation.finish()
@@ -150,30 +145,93 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
     }
     #endif
 
-    // MARK: - Conversation prompt composition
+    // MARK: - Message conversion
 
-    /// Compose all non-system messages into a single prompt with role labels.
-    /// When there is only one user message (the common case), we return it
-    /// as-is to avoid unnecessary formatting. For multi-turn conversations
-    /// (e.g., during the tool loop) we label each turn so the model can
-    /// distinguish its own prior output from user input.
-    private static func composeConversationPrompt(from messages: [LLMMessage]) -> String {
-        let nonSystem = messages.filter { $0.role != .system }
-        guard !nonSystem.isEmpty else { return "" }
+    // Convert internal `LLMMessage` array to MLXLMCommon's structured
+    // `Chat.Message` format. This ensures the model's chat template is
+    // properly applied, including system messages (tool documentation,
+    // instructions, policies) that would otherwise be lost.
+    //
+    // Consecutive messages of the same role are merged into a single
+    // entry. This is required because many chat templates (e.g. Mistral)
+    // enforce strictly alternating user/assistant turns and crash with
+    // a Jinja TemplateException if consecutive same-role messages appear.
+    #if canImport(MLXLLM)
+    private static func toChatMessages(from messages: [LLMMessage]) -> [Chat.Message] {
+        // Pre-merge consecutive same-role LLMMessages before converting
+        // to Chat.Message. This avoids pattern-matching issues with the
+        // Chat.Message enum and handles tool→user role coalescing.
+        let normalized = mergeConsecutiveRoles(messages)
 
-        // Fast path: single user message — no labelling needed.
-        if nonSystem.count == 1, nonSystem[0].role == .user {
-            return nonSystem[0].content
+        var chatMessages: [Chat.Message] = []
+        var pendingSystemContent: [String] = []
+
+        /// Helper to flush accumulated system content into a single message.
+        func flushSystem() {
+            guard !pendingSystemContent.isEmpty else { return }
+            let merged = pendingSystemContent.joined(separator: "\n\n")
+            chatMessages.append(.system(merged))
+            pendingSystemContent.removeAll()
         }
 
-        return nonSystem.map { msg in
+        for msg in normalized {
             switch msg.role {
-            case .user: "User: \(msg.content)"
-            case .assistant: "Assistant: \(msg.content)"
-            default: msg.content
+            case .system:
+                // Accumulate consecutive system messages for merging.
+                pendingSystemContent.append(msg.content)
+            case .user:
+                flushSystem()
+                chatMessages.append(.user(msg.content))
+            case .assistant:
+                flushSystem()
+                chatMessages.append(.assistant(msg.content))
+            case .tool:
+                flushSystem()
+                // Tool results are injected as user messages since
+                // small local models handle them better that way.
+                chatMessages.append(.user("[Tool Result]\n" + msg.content))
             }
-        }.joined(separator: "\n\n")
+        }
+        // Flush any trailing system messages.
+        flushSystem()
+
+        return chatMessages
     }
+
+    /// Merge consecutive messages that share the same effective role so
+    /// that strict chat templates (Mistral, etc.) don't crash. Tool
+    /// messages are treated as "user" for merging purposes since they
+    /// become user messages in the final Chat.Message array.
+    private static func mergeConsecutiveRoles(_ messages: [LLMMessage]) -> [LLMMessage] {
+        guard !messages.isEmpty else { return [] }
+        var result: [LLMMessage] = []
+
+        /// Effective role for merging: .tool counts as .user.
+        func effectiveRole(_ role: LLMMessage.Role) -> LLMMessage.Role {
+            role == .tool ? .user : role
+        }
+
+        for msg in messages {
+            if let last = result.last,
+               effectiveRole(last.role) == effectiveRole(msg.role) {
+                // Merge with the previous message.
+                let merged = last.content + "\n\n" + msg.content
+                result[result.count - 1] = LLMMessage(
+                    role: last.role,
+                    content: merged
+                )
+            } else {
+                result.append(msg)
+            }
+        }
+        return result
+    }
+    #else
+    private static func toChatMessages(from messages: [LLMMessage]) -> [[String: String]] {
+        // Stub for when MLX isn't available — won't be called.
+        []
+    }
+    #endif
 }
 
 // MARK: - Errors

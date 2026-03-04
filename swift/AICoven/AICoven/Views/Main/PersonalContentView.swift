@@ -116,6 +116,13 @@ struct PersonalContentView: View {
                 .onAppear { AnalyticsService.shared.trackUsageViewed() }
         case .budget:
             BudgetView()
+        case .connectedApps:
+            ConnectedAppsView()
+                .environmentObject(StoreService.shared)
+                .onAppear { AnalyticsService.shared.trackConnectedAppsOpened() }
+        case .mcpServers:
+            MCPServerManagementView()
+                .onAppear { AnalyticsService.shared.trackMCPServersOpened() }
         case .personalStrixSettings:
             StrixSettingsView(
                 onClose: {
@@ -186,6 +193,10 @@ struct PersonalContentView: View {
             tab = .usage
         case .budget:
             tab = .budget
+        case .connectedApps:
+            tab = .connectedApps
+        case .mcpServers:
+            tab = .mcpServers
         case .personalStrixSettings:
             tab = WorkspaceTab.personalStrix
         case let .memoryList(covenId):
@@ -727,6 +738,10 @@ struct PersonalChatView: View {
                 onAnswerDelta: { delta in
                     Task { @MainActor in
                         streamingAnswerBuffer += delta
+                        // Strip <think>...</think> blocks that reasoning models
+                        // (e.g. Qwen3) emit so they don't flash in the live UI.
+                        // Handles both closed and unclosed (in-progress) tags.
+                        streamingAnswerBuffer = Self.stripThinkTags(from: streamingAnswerBuffer)
                         // Heuristic: if we start seeing "web." or "github." snippets
                         // in the answer text, assume tools are being referenced.
                         if delta.contains("web.") || delta.contains("github.") {
@@ -888,6 +903,29 @@ struct PersonalChatView: View {
             return "Using Google Workspace tools to work with your docs and files…"
         }
         return "Using tool \(toolName)…"
+    }
+
+    /// Strip <think>...</think> blocks from the streaming buffer so reasoning
+    /// model internals (e.g. Qwen3) don't appear in the live chat UI.
+    /// Handles both closed tags and unclosed tags (model still thinking).
+    private static func stripThinkTags(from text: String) -> String {
+        var result = text
+        // Remove fully closed <think>...</think> blocks
+        if let regex = try? NSRegularExpression(
+            pattern: "<\\s*think\\s*>.*?<\\s*/\\s*think\\s*>",
+            options: [.dotMatchesLineSeparators, .caseInsensitive]
+        ) {
+            result = regex.stringByReplacingMatches(
+                in: result, options: [],
+                range: NSRange(location: 0, length: (result as NSString).length),
+                withTemplate: ""
+            )
+        }
+        // Remove unclosed <think> tags (model still generating reasoning)
+        if let thinkStart = result.range(of: "<think>", options: .caseInsensitive) {
+            result = String(result[..<thinkStart.lowerBound])
+        }
+        return result
     }
 }
 
