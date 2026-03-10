@@ -1,9 +1,14 @@
 import Foundation
 import os
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 #if canImport(MLXLLM)
 import MLXLLM
 import MLXLMCommon
+import MLX
 #endif
 
 /// LLM client that runs models locally via Apple's MLX framework on Apple
@@ -30,14 +35,67 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
     private let lock = OSAllocatedUnfairLock()
     #endif
 
+    /// Observer token for memory warning notifications.
+    private var memoryWarningObserver: NSObjectProtocol?
+
     init(modelID: String) {
         defaultModelID = modelID
+        registerMemoryWarningObserver()
+    }
+
+    deinit {
+        if let observer = memoryWarningObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    // MARK: - Memory Pressure
+
+    /// Listen for OS memory warnings and proactively release cached model
+    /// containers (~1–2 GB each). `ensureModelLoaded` will reload on next use.
+    private func registerMemoryWarningObserver() {
+        #if canImport(UIKit)
+        memoryWarningObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.unloadAllModels()
+        }
+        #endif
+    }
+
+    /// Release all cached model containers to free memory.
+    /// Called from the memory warning notification (main queue) and may
+    /// also be called directly. Thread-safe via `lock`.
+    func unloadAllModels() {
+        #if canImport(MLXLLM)
+        let unloaded = lock.withLock { () -> Int in
+            let n = loadedContainers.count
+            loadedContainers.removeAll()
+            return n
+        }
+        if unloaded > 0 {
+            print("⚠️ [MLXLLMClient] Memory warning: unloaded \(unloaded) model container(s)")
+        }
+        // Free GPU memory after unloading model containers.
+        MLX.GPU.clearCache()
+        #endif
     }
 
     // MARK: - LLMClient (full response)
 
     func completeChat(messages: [LLMMessage], model: String, options: ChatOptions) async throws -> LLMChatResponse {
         #if canImport(MLXLLM)
+
+        // On iOS, set a strict metal cache limit to prevent jetsam (OOM crashes).
+        // iPhones typically allow ~3–4 GB for apps; keep GPU cache small so the
+        // model weights + KV cache don't push us over the limit.
+        #if os(iOS)
+        let memoryLimit = 512 * 1024 * 1024 // 512 MB
+        MLX.GPU.set(cacheLimit: memoryLimit)
+        #endif
+
         let effectiveModel = model.isEmpty ? defaultModelID : model
         let container = try await ensureModelLoaded(effectiveModel)
 
@@ -46,8 +104,20 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
         // messages (tool docs, instructions, policies) that were previously
         // silently dropped by the old flat-prompt approach.
         let chatMessages = Self.toChatMessages(from: messages)
+        #if DEBUG
+        print("🔍 [MLXLLMClient] Chat messages (\(chatMessages.count)):")
+        for (i, m) in chatMessages.enumerated() {
+            let preview = m.content.prefix(120).replacingOccurrences(of: "\n", with: "⏎")
+            print("   [\(i)] role=\(m.role.rawValue) content=\"\(preview)...\"")
+        }
+        #endif
         let userInput = UserInput(chat: chatMessages)
+        // Cap generation length strictly on iOS to save KV cache memory.
+        #if os(iOS)
+        let maxTokens = min(options.maxTokens ?? 512, 512)
+        #else
         let maxTokens = options.maxTokens ?? 1024
+        #endif
 
         // Generate using MLX's perform + generate pattern.
         // The container.perform block gives us a ModelContext for generation.
@@ -56,18 +126,20 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
             // the model's chat template (e.g. Qwen3, Mistral, Llama formats).
             let input = try await context.processor.prepare(input: userInput)
 
-            // Set up generation parameters
+            // Set up generation parameters.
             let parameters = GenerateParameters(maxTokens: maxTokens)
 
-            // Generate text using MLXLMCommon.generate
-            // Explicit [Int] type to disambiguate between the two generate overloads
-            return try MLXLMCommon.generate(
-                input: input,
-                parameters: parameters,
-                context: context
-            ) { (_: [Int]) -> GenerateDisposition in
-                // Continue generating until done
-                return .more
+            // Wrap the synchronous generate call in autoreleasepool to ensure
+            // intermediate MLX buffers are eagerly freed.
+            // Explicit [Int] type to disambiguate between the two generate overloads.
+            return try autoreleasepool {
+                try MLXLMCommon.generate(
+                    input: input,
+                    parameters: parameters,
+                    context: context
+                ) { (_: [Int]) -> GenerateDisposition in
+                    .more
+                }
             }
         }
 
@@ -79,6 +151,13 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
             promptTokens: result.promptTokenCount,
             completionTokens: estimatedCompletionTokens
         )
+
+        // On iOS, proactively unload the model after each inference to prevent
+        // jetsam (OOM kill). The ~1.5 GB model weights staying resident is the
+        // primary cause of memory pressure. The model will reload on next chat.
+        #if os(iOS)
+        unloadAllModels()
+        #endif
 
         return LLMChatResponse(
             message: LLMMessage(role: .assistant, content: result.output),
@@ -126,6 +205,21 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
             return existing
         }
 
+        // On iOS, evict any OTHER cached models before loading a new one.
+        // Two models (~1.5 GB each) will exceed the jetsam limit. This
+        // ensures at most one model is cached at a time.
+        #if os(iOS)
+        let evicted = lock.withLock { () -> Int in
+            let n = loadedContainers.count
+            if n > 0 { loadedContainers.removeAll() }
+            return n
+        }
+        if evicted > 0 {
+            MLX.GPU.clearCache()
+            print("🔄 [MLXLLMClient] Evicted \(evicted) model(s) before loading \(modelID)")
+        }
+        #endif
+
         // Load the model (outside lock to avoid blocking)
         // Create configuration from model ID (e.g. "mlx-community/Llama-3.2-1B-Instruct-4bit")
         let configuration = ModelConfiguration(id: modelID)
@@ -148,14 +242,14 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
     // MARK: - Message conversion
 
     // Convert internal `LLMMessage` array to MLXLMCommon's structured
-    // `Chat.Message` format. This ensures the model's chat template is
-    // properly applied, including system messages (tool documentation,
-    // instructions, policies) that would otherwise be lost.
+    // `Chat.Message` format. System messages are folded into the first
+    // user message because many small models (Gemma 2, etc.) don't
+    // support the "system" role in their Jinja chat templates and throw
+    // a TemplateException.
     //
     // Consecutive messages of the same role are merged into a single
     // entry. This is required because many chat templates (e.g. Mistral)
-    // enforce strictly alternating user/assistant turns and crash with
-    // a Jinja TemplateException if consecutive same-role messages appear.
+    // enforce strictly alternating user/assistant turns.
     #if canImport(MLXLLM)
     private static func toChatMessages(from messages: [LLMMessage]) -> [Chat.Message] {
         // Pre-merge consecutive same-role LLMMessages before converting
@@ -164,38 +258,99 @@ final class MLXLLMClient: StreamingLLMClient, @unchecked Sendable {
         let normalized = mergeConsecutiveRoles(messages)
 
         var chatMessages: [Chat.Message] = []
-        var pendingSystemContent: [String] = []
-
-        /// Helper to flush accumulated system content into a single message.
-        func flushSystem() {
-            guard !pendingSystemContent.isEmpty else { return }
-            let merged = pendingSystemContent.joined(separator: "\n\n")
-            chatMessages.append(.system(merged))
-            pendingSystemContent.removeAll()
-        }
+        // Collect all system content to prepend to the first user message.
+        // Many small models (Gemma 2, Phi, etc.) don't support .system()
+        // in their Jinja chat template and throw TemplateException.
+        var systemContent: [String] = []
+        var systemFlushed = false
 
         for msg in normalized {
             switch msg.role {
             case .system:
-                // Accumulate consecutive system messages for merging.
-                pendingSystemContent.append(msg.content)
+                systemContent.append(msg.content)
             case .user:
-                flushSystem()
-                chatMessages.append(.user(msg.content))
+                var text = msg.content
+                // Prepend accumulated system content to the first user
+                // message so instructions aren't lost.
+                if !systemFlushed, !systemContent.isEmpty {
+                    let systemBlock = systemContent.joined(separator: "\n\n")
+                    text = systemBlock + "\n\n" + text
+                    systemFlushed = true
+                }
+                chatMessages.append(.user(text))
             case .assistant:
-                flushSystem()
+                // If we have unflushed system content and we're about to add
+                // an assistant message first, flush it as a user message so
+                // the conversation starts with user role (required by Gemma 2
+                // and other strict chat templates).
+                if !systemFlushed, !systemContent.isEmpty {
+                    let systemBlock = systemContent.joined(separator: "\n\n")
+                    chatMessages.append(.user(systemBlock))
+                    systemFlushed = true
+                } else if chatMessages.isEmpty {
+                    // No system content at all — still need a user message
+                    // before the first assistant message.
+                    chatMessages.append(.user("Continue."))
+                }
                 chatMessages.append(.assistant(msg.content))
             case .tool:
-                flushSystem()
                 // Tool results are injected as user messages since
                 // small local models handle them better that way.
                 chatMessages.append(.user("[Tool Result]\n" + msg.content))
             }
         }
-        // Flush any trailing system messages.
-        flushSystem()
 
-        return chatMessages
+        // If there were only system messages and no user message,
+        // emit them as a single user message so the model can respond.
+        if !systemFlushed, !systemContent.isEmpty {
+            let systemBlock = systemContent.joined(separator: "\n\n")
+            chatMessages.append(.user(systemBlock))
+        }
+
+        // Post-merge: folding system messages into user messages and
+        // stripping system entries can leave consecutive .user() entries
+        // (e.g. when ContextBuilder's dedup fails for rewritten prompts).
+        // Gemma 2's template enforces strict alternation and throws
+        // TemplateException if adjacent roles match. Merge them here.
+        return mergeAdjacentChatMessages(chatMessages)
+    }
+
+    /// Merge consecutive Chat.Messages that share the same role so that
+    /// strict chat templates (Gemma 2, etc.) never see adjacent
+    /// user-user or assistant-assistant pairs.
+    private static func mergeAdjacentChatMessages(_ messages: [Chat.Message]) -> [Chat.Message] {
+        guard messages.count > 1 else { return messages }
+        var result: [Chat.Message] = [messages[0]]
+
+        for msg in messages.dropFirst() {
+            let prevRole = chatMessageRole(result.last!)
+            let curRole = chatMessageRole(msg)
+
+            if prevRole == curRole, prevRole != "system" {
+                // Merge adjacent same-role messages.
+                let prevText = chatMessageContent(result.last!)
+                let curText = chatMessageContent(msg)
+                let merged = prevText + "\n\n" + curText
+                if prevRole == "user" {
+                    result[result.count - 1] = .user(merged)
+                } else {
+                    result[result.count - 1] = .assistant(merged)
+                }
+            } else {
+                result.append(msg)
+            }
+        }
+        return result
+    }
+
+    /// Extract the role string from a Chat.Message.
+    private static func chatMessageRole(_ msg: Chat.Message) -> String {
+        msg.role.rawValue
+    }
+
+    /// Extract the text content from a Chat.Message.
+    private static func chatMessageContent(_ msg: Chat.Message) -> String {
+        msg.content
     }
 
     /// Merge consecutive messages that share the same effective role so

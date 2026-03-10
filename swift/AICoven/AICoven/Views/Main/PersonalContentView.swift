@@ -333,7 +333,12 @@ struct PersonalChatView: View {
                 onEditAgent: onEditAgent,
                 onBack: onBack
             )
+            #if os(iOS)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            #else
             .padding(Spacing.md)
+            #endif
 
             GradientDivider()
 
@@ -412,6 +417,15 @@ struct PersonalChatView: View {
                     .padding(.top, Spacing.lg)
                     .padding(.bottom, Spacing.xxl)
                 }
+                #if os(iOS)
+                .scrollDismissesKeyboard(.interactively)
+                .onTapGesture {
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder),
+                        to: nil, from: nil, for: nil
+                    )
+                }
+                #endif
                 .onChange(of: messages.count) { _, _ in
                     // When we're prepending older messages, keep the previously
                     // visible first message pinned in place instead of jumping
