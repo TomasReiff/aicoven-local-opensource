@@ -143,6 +143,7 @@ extension GooglePickerWebView {
             return "<html><body>Error: Failed to encode picker parameters</body></html>"
         }
 
+        // swiftformat:disable indent,trailingSpace
         return """
         <!DOCTYPE html>
         <html>
@@ -248,6 +249,7 @@ extension GooglePickerWebView {
         </body>
         </html>
         """
+        // swiftformat:enable indent,trailingSpace
     }
 }
 

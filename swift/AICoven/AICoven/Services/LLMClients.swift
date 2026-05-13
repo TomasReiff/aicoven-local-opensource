@@ -5,14 +5,17 @@ import Foundation
 /// Errors specific to local chat orchestration
 enum LocalChatError: Error, LocalizedError {
     case missingOpenAIAPIKey
+    case missingBaseURL
     case invalidResponse
 
     var errorDescription: String? {
         switch self {
         case .missingOpenAIAPIKey:
-            "No OpenAI API key configured. Set the OPENAI_API_KEY environment variable or store an \"openai_api_key\" string in UserDefaults."
+            "No API key configured. Set the appropriate environment variable or store the key in UserDefaults."
+        case .missingBaseURL:
+            "No base URL configured. Set the appropriate base URL in UserDefaults."
         case .invalidResponse:
-            "Received an invalid response from the OpenAI API."
+            "Received an invalid response from the API."
         }
     }
 }
