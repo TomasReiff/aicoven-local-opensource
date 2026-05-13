@@ -362,11 +362,11 @@ actor ChatService {
         roleId: String? = nil,
         providerAccountId: String? = nil,
         attachments: [FileAttachmentDetail]? = nil,
-        onPlanningDelta: @escaping (String) -> Void,
-        onToolEvent: @escaping (String) -> Void,
-        onAnswerDelta: @escaping (String) -> Void,
-        onDone: @escaping (_ provider: String?, _ model: String?, _ tokenUsage: TokenUsage?) -> Void
+        onStateChange: @escaping (TurnState) -> Void
     ) async throws {
+        var state = TurnState(threadId: threadId)
+        state.phase = .starting
+        onStateChange(state)
         // Ensure we see any provider keys and live model lists that may have
         // been added or changed after ChatService was first initialized.
         await ensureEnvironment()
@@ -413,9 +413,11 @@ actor ChatService {
             guard let fallbackDescriptor = modelRouter.route(for: routingContext),
                   let fallbackClient = llmClients[fallbackDescriptor.providerID] else {
                 let msg = "No configured providers/models available for chat. Add provider keys in Settings."
-                onPlanningDelta("")
-                onAnswerDelta(msg)
-                onDone(nil, nil, nil)
+                state.phase = .finalizing
+                state.status = .failed
+                state.answer = msg
+                state.bumpVersion()
+                onStateChange(state)
                 return
             }
             descriptor = fallbackDescriptor
@@ -423,7 +425,10 @@ actor ChatService {
         }
 
         // Give the UI an immediate hint that we're contacting the provider.
-        onPlanningDelta("Thinking about your question…")
+        state.phase = .planning
+        state.scratchpad = "Thinking about your question…"
+        state.bumpVersion()
+        onStateChange(state)
 
         // Intent gate: decide whether this message needs tools at all.
         // This prevents unnecessary tool loops for conversational requests
@@ -565,6 +570,11 @@ actor ChatService {
         // and leave the user with zero output.
         if isLocalModel, toolsAllowed, remainingToolSteps > 0 {
             do {
+                // Precedence matters for local models:
+                // 1. deterministic multi-step chains
+                // 2. native tools with keyword/semantic matching
+                // 3. MCP fuzzy fallback
+                // This keeps the most structured / lowest-ambiguity path first.
                 // Try multi-step tool chains first. ToolChainResolver detects
                 // composite intents ("search X and summarize", "read file and
                 // explain", "time in X and Y") and returns an ordered chain.
@@ -582,9 +592,24 @@ actor ChatService {
                     // Execute each tool in the chain sequentially, accumulating
                     // results into toolContextLog. Respect the user's tool budget.
                     for invocation in chain.prefix(remainingToolSteps) {
-                        onToolEvent(Self.friendlyToolSummary(for: invocation.tool))
+                        let toolID = UUID().uuidString
+                        state.phase = .tooling
+                        state.toolsInProgress[toolID] = TurnToolCall(id: toolID, name: invocation.tool, arguments: [:], result: nil, status: "running")
+                        state.bumpVersion()
+                        onStateChange(state)
+
                         AnalyticsService.shared.trackToolUsed(toolName: invocation.tool, threadId: threadId)
                         let (_, contextBlock) = try await executeChatToolCall(invocation)
+
+                        state.toolsInProgress[toolID]?.status = "completed"
+                        state.toolsInProgress[toolID]?.result = contextBlock
+                        if let completed = state.toolsInProgress[toolID] {
+                            state.toolsCompleted.append(completed)
+                            state.toolsInProgress.removeValue(forKey: toolID)
+                        }
+                        state.bumpVersion()
+                        onStateChange(state)
+
                         if let block = contextBlock {
                             if toolContextLog.isEmpty {
                                 toolContextLog = block
@@ -613,9 +638,24 @@ actor ChatService {
                     #if DEBUG
                     AppErrorReporter.log(message: "Pre-executing native tool for local model: \(forcedNative.tool)", context: "ChatService.streamMessage.preExecute")
                     #endif
-                    onToolEvent(Self.friendlyToolSummary(for: forcedNative.tool))
+                    let toolID = UUID().uuidString
+                    state.phase = .tooling
+                    state.toolsInProgress[toolID] = TurnToolCall(id: toolID, name: forcedNative.tool, arguments: [:], result: nil, status: "running")
+                    state.bumpVersion()
+                    onStateChange(state)
+
                     AnalyticsService.shared.trackToolUsed(toolName: forcedNative.tool, threadId: threadId)
                     let (_, contextBlock) = try await executeChatToolCall(forcedNative)
+
+                    state.toolsInProgress[toolID]?.status = "completed"
+                    state.toolsInProgress[toolID]?.result = contextBlock
+                    if let completed = state.toolsInProgress[toolID] {
+                        state.toolsCompleted.append(completed)
+                        state.toolsInProgress.removeValue(forKey: toolID)
+                    }
+                    state.bumpVersion()
+                    onStateChange(state)
+
                     if let block = contextBlock {
                         toolContextLog = block
                     }
@@ -628,9 +668,24 @@ actor ChatService {
                     #if DEBUG
                     AppErrorReporter.log(message: "Pre-executing MCP tool for local model: \(forcedMCP.tool)", context: "ChatService.streamMessage.preExecute")
                     #endif
-                    onToolEvent(Self.friendlyToolSummary(for: forcedMCP.tool))
+                    let toolID = UUID().uuidString
+                    state.phase = .tooling
+                    state.toolsInProgress[toolID] = TurnToolCall(id: toolID, name: forcedMCP.tool, arguments: [:], result: nil, status: "running")
+                    state.bumpVersion()
+                    onStateChange(state)
+
                     AnalyticsService.shared.trackToolUsed(toolName: forcedMCP.tool, threadId: threadId)
                     let (_, contextBlock) = try await executeChatToolCall(forcedMCP)
+
+                    state.toolsInProgress[toolID]?.status = "completed"
+                    state.toolsInProgress[toolID]?.result = contextBlock
+                    if let completed = state.toolsInProgress[toolID] {
+                        state.toolsCompleted.append(completed)
+                        state.toolsInProgress.removeValue(forKey: toolID)
+                    }
+                    state.bumpVersion()
+                    onStateChange(state)
+
                     if let block = contextBlock {
                         toolContextLog = block
                     }
@@ -807,8 +862,22 @@ actor ChatService {
                     // Track tool usage
                     AnalyticsService.shared.trackToolUsed(toolName: toolCall.tool, threadId: threadId)
 
+                    let toolID = UUID().uuidString
+                    state.phase = .tooling
+                    state.toolsInProgress[toolID] = TurnToolCall(id: toolID, name: toolCall.tool, arguments: [:], result: nil, status: "running")
+                    state.bumpVersion()
+                    onStateChange(state)
+
                     let (summary, contextBlock) = try await executeChatToolCall(toolCall)
-                    onToolEvent(summary)
+
+                    state.toolsInProgress[toolID]?.status = "completed"
+                    state.toolsInProgress[toolID]?.result = contextBlock
+                    if let completed = state.toolsInProgress[toolID] {
+                        state.toolsCompleted.append(completed)
+                        state.toolsInProgress.removeValue(forKey: toolID)
+                    }
+                    state.bumpVersion()
+                    onStateChange(state)
                     if let block = contextBlock {
                         if toolContextLog.isEmpty {
                             toolContextLog = block
@@ -851,8 +920,22 @@ actor ChatService {
                         // Track tool usage
                         AnalyticsService.shared.trackToolUsed(toolName: "web_search", threadId: threadId)
 
+                        let toolID = UUID().uuidString
+                        state.phase = .tooling
+                        state.toolsInProgress[toolID] = TurnToolCall(id: toolID, name: forcedCall.tool, arguments: [:], result: nil, status: "running")
+                        state.bumpVersion()
+                        onStateChange(state)
+
                         let (summary, contextBlock) = try await executeChatToolCall(forcedCall)
-                        onToolEvent(summary)
+
+                        state.toolsInProgress[toolID]?.status = "completed"
+                        state.toolsInProgress[toolID]?.result = contextBlock
+                        if let completed = state.toolsInProgress[toolID] {
+                            state.toolsCompleted.append(completed)
+                            state.toolsInProgress.removeValue(forKey: toolID)
+                        }
+                        state.bumpVersion()
+                        onStateChange(state)
                         if let block = contextBlock {
                             if toolContextLog.isEmpty {
                                 toolContextLog = block
@@ -920,8 +1003,22 @@ actor ChatService {
                             // Track tool usage
                             AnalyticsService.shared.trackToolUsed(toolName: forcedCall.tool, threadId: threadId)
 
+                            let toolID = UUID().uuidString
+                            state.phase = .tooling
+                            state.toolsInProgress[toolID] = TurnToolCall(id: toolID, name: forcedCall.tool, arguments: [:], result: nil, status: "running")
+                            state.bumpVersion()
+                            onStateChange(state)
+
                             let (summary, contextBlock) = try await executeChatToolCall(forcedCall)
-                            onToolEvent(summary)
+
+                            state.toolsInProgress[toolID]?.status = "completed"
+                            state.toolsInProgress[toolID]?.result = contextBlock
+                            if let completed = state.toolsInProgress[toolID] {
+                                state.toolsCompleted.append(completed)
+                                state.toolsInProgress.removeValue(forKey: toolID)
+                            }
+                            state.bumpVersion()
+                            onStateChange(state)
                             if let block = contextBlock {
                                 // Replace context with fresh MCP results.
                                 toolContextLog = block
@@ -959,9 +1056,11 @@ actor ChatService {
                 // user-visible error text into analytics.
                 AnalyticsService.shared.trackMessageError(threadId: threadId, errorType: errorCode)
 
-                onPlanningDelta("")
-                onAnswerDelta("Error: \(msg)")
-                onDone(nil, nil, nil)
+                state.phase = .finalizing
+                state.status = .failed
+                state.answer = "Error: \(msg)"
+                state.bumpVersion()
+                onStateChange(state)
                 return
             }
         }
@@ -1035,7 +1134,9 @@ actor ChatService {
                 // for the final answer so the user sees text appear in real time.
                 if let streamingClient = client as? StreamingLLMClient {
                     let options = ChatOptions(temperature: 0.7, maxTokens: nil, stream: true)
-                    onPlanningDelta("")
+                    state.phase = .answering
+                    state.bumpVersion()
+                    onStateChange(state)
                     var accumulated = ""
                     let stream = streamingClient.streamChat(
                         messages: contextMessages,
@@ -1045,7 +1146,9 @@ actor ChatService {
                     for try await delta in stream {
                         if !delta.text.isEmpty {
                             accumulated += delta.text
-                            onAnswerDelta(delta.text)
+                            state.answer = accumulated
+                            state.bumpVersion()
+                            onStateChange(state)
                         }
                         if let usage = delta.usage {
                             finalUsage = TokenUsage(
@@ -1094,9 +1197,11 @@ actor ChatService {
                 // user-visible error text into analytics.
                 AnalyticsService.shared.trackMessageError(threadId: threadId, errorType: errorCode)
 
-                onPlanningDelta("")
-                onAnswerDelta("Error: \(msg)")
-                onDone(nil, nil, nil)
+                state.phase = .finalizing
+                state.status = .failed
+                state.answer = "Error: \(msg)"
+                state.bumpVersion()
+                onStateChange(state)
                 return
             }
         }
@@ -1135,12 +1240,13 @@ actor ChatService {
         }
 
         AppErrorReporter.log(message: "streamMessage completed with answer length=\(answer.count) provider=\(descriptor.providerID) model=\(descriptor.modelID) usedTools=\(maxToolSteps - remainingToolSteps)", context: "ChatService.streamMessage")
-        onPlanningDelta("")
-        // Only emit the full answer if we haven't already streamed it
-        // token-by-token via StreamingLLMClient.
+        state.phase = .finalizing
         if !streamedAnswer {
-            onAnswerDelta(answer)
+            state.answer = answer
         }
+        state.status = .completed
+        state.bumpVersion()
+        onStateChange(state)
 
         // Persist a lightweight usage entry so the local Budgets & Usage
         // dashboard can approximate spend per provider.
@@ -1150,8 +1256,6 @@ actor ChatService {
             usage: finalUsage,
             threadId: threadId
         )
-
-        onDone(descriptor.providerID, descriptor.modelID, finalUsage)
 
         // Track message received. We don't currently measure precise
         // end-to-end latency here, so omit response time instead of
@@ -1971,6 +2075,13 @@ extension ChatService {
 
     // MARK: - Forced Native Tool Call
 
+    /// Minimum semantic-relevance score required before we auto-invoke a
+    /// native tool for a local model. Hand-tuned from local-model spot checks
+    /// during this feature work: lower values let loosely-related tools win
+    /// too often, while higher values started dropping obvious
+    /// "read this file"/"list files" matches.
+    private static let semanticToolMatchThreshold: Float = 0.3
+
     /// For local models, attempt to match the user's message to a native
     /// tool and construct a forced call. Returns `nil` if no native tool
     /// is a clear match.
@@ -2004,7 +2115,7 @@ extension ChatService {
         if searchPatterns.contains(where: { lower.contains($0) }) {
             return ChatToolInvocation(
                 tool: "web_search",
-                input: AnyJSONValue(["query": AnyJSONValue(userMessage)]),
+                input: AnyJSONValue(["query": AnyJSONValue(extractWebSearchQuery(from: userMessage))]),
                 reason: "User asked to search/look up information"
             )
         }
@@ -2100,9 +2211,7 @@ extension ChatService {
             allTools: candidates
         )
 
-        // Require a meaningful score — 0.3 is conservative enough to avoid
-        // false positives while still catching intent the keywords missed.
-        guard score >= 0.3 else { return nil }
+        guard score >= semanticToolMatchThreshold else { return nil }
 
         #if DEBUG
         AppErrorReporter.log(
@@ -2117,7 +2226,7 @@ extension ChatService {
         let toolInput: [String: AnyJSONValue]
         switch topTool.name {
         case "web_search":
-            toolInput = ["query": AnyJSONValue(userMessage)]
+            toolInput = ["query": AnyJSONValue(extractWebSearchQuery(from: userMessage))]
         case "web_browse":
             // Try to extract a URL; if none found, skip.
             guard let url = extractURL(from: userMessage) else { return nil }
@@ -2152,6 +2261,75 @@ extension ChatService {
     }
 
     // MARK: - Input Extraction Helpers
+
+    /// Extract the most likely standalone search query from a user message.
+    /// This strips common lead-in phrases ("search for", "find information
+    /// about") plus follow-on clauses such as "and summarize it".
+    nonisolated static func extractWebSearchQuery(from message: String) -> String {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+
+        let continuations = [
+            "and then summarize it", "and then summarize",
+            "and summarize it", "and summarize", "then summarize it", "then summarize",
+            "and then explain it", "and then explain",
+            "and explain it", "and explain", "then explain it", "then explain",
+            "and then tell me about it", "and then tell me",
+            "and tell me about it", "and tell me", "then tell me about it", "then tell me",
+        ]
+        let triggers = [
+            "search for ", "look up ", "find out about ", "find information about ",
+            "find info about ", "find me information about ", "find me info about ",
+            "google ",
+        ]
+
+        for trigger in triggers {
+            guard let triggerRange = trimmed.range(of: trigger, options: .caseInsensitive) else { continue }
+            let candidate = String(trimmed[triggerRange.upperBound...])
+            let query = trimSearchContinuation(candidate, continuations: continuations)
+            if !query.isEmpty {
+                return query
+            }
+        }
+
+        let weatherTriggers = [
+            "what's the weather in ", "what is the weather in ", "weather in ", "current weather in ",
+        ]
+        for trigger in weatherTriggers {
+            guard let triggerRange = trimmed.range(of: trigger, options: .caseInsensitive) else { continue }
+            let candidate = String(trimmed[triggerRange.lowerBound...])
+            let query = trimSearchContinuation(candidate, continuations: continuations)
+            if !query.isEmpty {
+                return query
+            }
+        }
+
+        return trimSearchContinuation(trimmed, continuations: continuations)
+    }
+
+    private nonisolated static func trimSearchContinuation(
+        _ query: String,
+        continuations: [String]
+    ) -> String {
+        var earliest = query.endIndex
+        for continuation in continuations {
+            if let range = query.range(of: continuation, options: .caseInsensitive),
+               range.lowerBound < earliest {
+                earliest = range.lowerBound
+            }
+        }
+
+        var trimmed = String(query[query.startIndex ..< earliest])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let trailingPunctuation: Set<Character> = [",", ".", ";", "!"]
+
+        while let last = trimmed.last, trailingPunctuation.contains(last) {
+            trimmed.removeLast()
+            trimmed = trimmed.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return trimmed
+    }
 
     /// Extract a URL from a user message. Uses `NSDataDetector` for robust
     /// link detection, with fallback to backtick/quoted strings.
@@ -2245,6 +2423,9 @@ extension ChatService {
     /// external access (email, calendar, messages, bank statements, etc.).
     /// Used to inject a hallucination guard for local models that would
     /// otherwise confidently fabricate answers about user-specific content.
+    /// This is intentionally heuristic: it favors a low-cost first-pass guard
+    /// over perfect recall, so some edge cases may still require future
+    /// pattern additions.
     nonisolated static func detectPersonalDataQuery(_ userMessage: String) -> Bool {
         let lower = userMessage.lowercased()
         let personalPatterns = [

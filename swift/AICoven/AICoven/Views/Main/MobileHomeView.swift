@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Root mobile UI: tab bar for Home / Workspace / Activity / Profile
+/// Root mobile UI: tab bar for Home / Covens / Profile
 struct MobileRootView: View {
     var body: some View {
         TabView {
@@ -9,19 +9,9 @@ struct MobileRootView: View {
                     Label("Chats", systemImage: "bubble.left.and.bubble.right.fill")
                 }
 
-            MobileWorkspaceRootView()
-                .tabItem {
-                    Label("Workspace", systemImage: "briefcase.fill")
-                }
-
-            MobileActivityRootView()
-                .tabItem {
-                    Label("Activity", systemImage: "bell.fill")
-                }
-
             MobileProfileRootView()
                 .tabItem {
-                    Label("Profile", systemImage: "person.crop.circle.fill")
+                    Label("Profile", systemImage: "person.crop.circle")
                 }
         }
         .tint(.aicovenTeal)
@@ -182,21 +172,17 @@ struct MobileChatsRootView: View {
                 .toolbar {
                     ToolbarItem(placement: .principal) {
                         Menu {
-                            Button { selectedCovenId = nil } label: {
-                                if selectedCovenId == nil {
-                                    Label("Strix", systemImage: "checkmark")
-                                } else {
-                                    Text("Strix")
-                                }
+                            Button {
+                                setSelectedScope(covenId: nil)
+                            } label: {
+                                scopeMenuLabel("Strix", isSelected: selectedCovenId == nil)
                             }
                             Divider()
                             ForEach(covens) { coven in
-                                Button { selectedCovenId = coven.id } label: {
-                                    if selectedCovenId == coven.id {
-                                        Label(coven.name, systemImage: "checkmark")
-                                    } else {
-                                        Text(coven.name)
-                                    }
+                                Button {
+                                    setSelectedScope(covenId: coven.id)
+                                } label: {
+                                    scopeMenuLabel(coven.name, isSelected: selectedCovenId == coven.id)
                                 }
                             }
                             Divider()
@@ -222,7 +208,7 @@ struct MobileChatsRootView: View {
                     CreateCovenSheet(onCreated: { coven in
                         Task {
                             await loadCovens()
-                            selectedCovenId = coven.id
+                            setSelectedScope(covenId: coven.id)
                         }
                     })
                     .environmentObject(StoreService.shared)
@@ -265,7 +251,9 @@ struct MobileChatsRootView: View {
                 )) {
                     Button("OK", role: .cancel) {}
                 } message: {
-                    if let errorMessage { Text(errorMessage) }
+                    if let errorMessage {
+                        Text(errorMessage)
+                    }
                 }
         }
     }
@@ -274,8 +262,12 @@ struct MobileChatsRootView: View {
         do {
             covens = try await CovenService.shared.loadCovens()
         } catch {
-            AppErrorReporter.log(error: error, context: "MobileHomeView.loadCovens")
+            AppErrorReporter.log(error: error, context: "MobileChatsRootView.loadCovens")
             covens = []
+            threads = []
+            selectedThread = nil
+            setSelectedScope(covenId: nil)
+            errorMessage = "Couldn’t load covens right now."
         }
     }
 
@@ -285,9 +277,10 @@ struct MobileChatsRootView: View {
         do {
             threads = try await ThreadService.shared.loadThreads(covenId: selectedCovenId)
         } catch {
-            AppErrorReporter.log(error: error, context: "MobileHomeView.loadThreads")
+            AppErrorReporter.log(error: error, context: "MobileChatsRootView.loadThreads")
             threads = []
-            errorMessage = error.localizedDescription
+            selectedThread = nil
+            errorMessage = "Couldn’t load chats for this workspace."
         }
     }
 
@@ -299,10 +292,26 @@ struct MobileChatsRootView: View {
                     threads.remove(at: index)
                 }
             } catch {
-                AppErrorReporter.log(error: error, context: "MobileHomeView.deleteThread")
-                errorMessage = error.localizedDescription
+                AppErrorReporter.log(error: error, context: "MobileChatsRootView.deleteThread")
+                errorMessage = "Couldn’t delete that chat."
             }
         }
+    }
+
+    @ViewBuilder
+    private func scopeMenuLabel(_ title: String, isSelected: Bool) -> some View {
+        if isSelected {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
+        }
+    }
+
+    private func setSelectedScope(covenId: String?) {
+        guard selectedCovenId != covenId else { return }
+        selectedCovenId = covenId
+        selectedThread = nil
+        threads = []
     }
 }
 
@@ -353,19 +362,7 @@ struct ThreadRowView: View {
         let now = Date()
         let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date, to: now)
 
-        if let years = components.year, years > 0 {
-            return "\(years)y"
-        } else if let months = components.month, months > 0 {
-            return "\(months)mo"
-        } else if let days = components.day, days > 0 {
-            return "\(days)d"
-        } else if let hours = components.hour, hours > 0 {
-            return "\(hours)h"
-        } else if let minutes = components.minute, minutes > 0 {
-            return "\(minutes)m"
-        } else {
-            return "now"
-        }
+        if let years = components.year, years > 0 { return "\(years)y" } else if let months = components.month, months > 0 { return "\(months)mo" } else if let days = components.day, days > 0 { return "\(days)d" } else if let hours = components.hour, hours > 0 { return "\(hours)h" } else if let minutes = components.minute, minutes > 0 { return "\(minutes)m" } else { return "now" }
     }
 }
 
@@ -540,6 +537,21 @@ struct MobileProfileRootView: View {
                         NavigationLink(destination: EnhancedSettingsView()) {
                             Label("Settings", systemImage: "gearshape")
                         }
+                        NavigationLink(destination: ProviderKeysView()) {
+                            Label("Provider Keys", systemImage: "key.fill")
+                        }
+                        NavigationLink(destination: UsageSettingsView()) {
+                            Label("Budgets & Usage", systemImage: "chart.bar.xaxis")
+                        }
+                        NavigationLink(destination: StrixSettingsView()) {
+                            Label("Default Agent", systemImage: "sparkles")
+                        }
+                        NavigationLink(destination: ConnectedAppsView().environmentObject(StoreService.shared)) {
+                            Label("Connected Apps", systemImage: "app.connected.to.app.below.fill")
+                        }
+                        NavigationLink(destination: MCPServerManagementView()) {
+                            Label("MCP Servers", systemImage: "server.rack")
+                        }
                     }
 
                     Section("Premium") {
@@ -570,95 +582,4 @@ struct MobileProfileRootView: View {
     MobileRootView()
         .environmentObject(AppState.shared)
         .environmentObject(AuthService.shared)
-}
-
-// MARK: - Mobile Workspace Root
-
-struct MobileWorkspaceRootView: View {
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                NebulaBackground().ignoresSafeArea()
-                List {
-                    Section {
-                        NavigationLink(destination: ProviderKeysView()) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Label("Provider Keys", systemImage: "key.fill")
-                                    .font(.headline)
-                                Text("Connect and manage API keys")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.vertical, 4)
-                        }
-
-                        NavigationLink(destination: UsageSettingsView()) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Label("Budgets & Usage", systemImage: "chart.bar.xaxis")
-                                    .font(.headline)
-                                Text("Set limits and monitor usage")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.vertical, 4)
-                        }
-
-                        NavigationLink(destination: ConnectedAppsView().environmentObject(StoreService.shared)) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Label("Connected Apps", systemImage: "app.connected.to.app.below.fill")
-                                    .font(.headline)
-                                Text("Manage external integrations")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.vertical, 4)
-                        }
-
-                        NavigationLink(destination: MCPServerManagementView()) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Label("MCP Servers", systemImage: "server.rack")
-                                    .font(.headline)
-                                Text("Manage connected MCP servers")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-                }
-                .scrollContentBackground(.hidden)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .navigationTitle("Workspace")
-        }
-    }
-}
-
-// MARK: - Mobile Activity Root
-
-struct MobileActivityRootView: View {
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                NebulaBackground().ignoresSafeArea()
-
-                VStack(spacing: Spacing.lg) {
-                    Image(systemName: "bell.slash")
-                        .font(.system(size: 60))
-                        .foregroundColor(.aicovenTextSecondary)
-
-                    Text("No Activity Yet")
-                        .font(.aicovenH2)
-
-                    Text("Local-first notifications and activity logs will appear here.")
-                        .font(.aicovenBody)
-                        .foregroundColor(.aicovenTextSecondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .navigationTitle("Activity")
-        }
-    }
 }

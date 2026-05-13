@@ -551,21 +551,6 @@ enum PromptTemplates {
         return sections.joined(separator: "\n\n")
     }
 
-    /// Encodes tool-example inputs as JSON for documentation strings. Avoids
-    /// string-interpolating `AnyJSONValue` (which would print enum descriptions
-    /// like `string("…")` instead of valid JSON).
-    private static func jsonString(forToolExampleInput input: [String: AnyJSONValue]) -> String {
-        guard !input.isEmpty else { return "{}" }
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys]
-            let data = try encoder.encode(input)
-            return String(data: data, encoding: .utf8) ?? "{}"
-        } catch {
-            return "{}"
-        }
-    }
-
     /// Generate tool documentation section for enabled tools.
     ///
     /// - Parameter compact: When `true` (used by `generateMLXAgentPrompt`),
@@ -598,13 +583,29 @@ enum PromptTemplates {
             if !compact, !tool.inputExamples.isEmpty {
                 lines.append("Input examples:")
                 for ex in tool.inputExamples {
-                    let inputStr = jsonString(forToolExampleInput: ex.input)
+                    let inputStr = formatToolInputExampleJSON(ex.input)
                     lines.append("  \(ex.description): \(inputStr)")
                 }
             }
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    static func formatToolInputExampleJSON(_ input: [String: AnyJSONValue]) -> String {
+        guard !input.isEmpty else { return "{}" }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+
+        guard
+            let data = try? encoder.encode(input),
+            let json = String(data: data, encoding: .utf8)
+        else {
+            return "{}"
+        }
+
+        return json
     }
 
     // MARK: - Default Tool Sets

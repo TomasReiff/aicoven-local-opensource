@@ -64,7 +64,7 @@ struct PreAuthOnboardingView: View {
                 ctaView
             }
         }
-        .themedColorScheme()
+        .preferredColorScheme(.dark)
         .fullScreenCover(isPresented: $showSignUp) {
             LoginView(initialMode: .signup)
                 .environmentObject(authService)
@@ -132,7 +132,7 @@ struct PreAuthOnboardingView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
-        .themedColorScheme()
+        .preferredColorScheme(.dark)
         .sheet(isPresented: $showSignUp) {
             LoginView(initialMode: .signup)
                 .environmentObject(authService)
