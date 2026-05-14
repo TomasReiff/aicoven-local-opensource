@@ -235,11 +235,10 @@ actor CovenRepository {
         let uid = await UserScope.currentUserID
 
         let records: [CovenRecord] = try await dbQueue.read { db in
-            var request = CovenRecord.order(CovenRecord.Columns.createdAt.desc)
-            if let uid {
-                request = request.filter(CovenRecord.Columns.userId == uid)
-            }
-            return try request.fetchAll(db)
+            try CovenRecord
+                .filter(CovenRecord.Columns.userId == uid)
+                .order(CovenRecord.Columns.createdAt.desc)
+                .fetchAll(db)
         }
 
         return records.map { rec in
@@ -301,13 +300,11 @@ actor CovenRepository {
         let uid = await UserScope.currentUserID
 
         let records: [RoleRecord] = try await dbQueue.read { db in
-            var request = RoleRecord
+            try RoleRecord
                 .filter(RoleRecord.Columns.covenId == covenId)
+                .filter(RoleRecord.Columns.userId == uid)
                 .order(RoleRecord.Columns.createdAt.asc)
-            if let uid {
-                request = request.filter(RoleRecord.Columns.userId == uid)
-            }
-            return try request.fetchAll(db)
+                .fetchAll(db)
         }
 
         return records.map { mapRecordToRole($0) }

@@ -471,6 +471,7 @@ actor ChatService {
         let toolConfig: ContextBuilder.ToolConfig = isLocalModel
             ? await .mlxTools()
             : await .connected()
+        await ToolExecutionService.shared.setWhitelist(for: "chat", tools: toolConfig.enabledTools)
 
         // ── Context-aware repeat detection (ported from backend) ──────────
         // Tracks tool-call signatures across loop iterations so we can
@@ -1493,6 +1494,8 @@ private extension LocalChatError {
         switch self {
         case .missingOpenAIAPIKey:
             "missing_openai_api_key"
+        case .missingAPIKey:
+            "missing_api_key"
         case .missingBaseURL:
             "missing_base_url"
         case .invalidResponse:

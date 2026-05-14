@@ -5,13 +5,16 @@ import Foundation
 /// Errors specific to local chat orchestration
 enum LocalChatError: Error, LocalizedError {
     case missingOpenAIAPIKey
+    case missingAPIKey(provider: String)
     case missingBaseURL
     case invalidResponse
 
     var errorDescription: String? {
         switch self {
         case .missingOpenAIAPIKey:
-            "No API key configured. Set the appropriate environment variable or store the key in UserDefaults."
+            "No OpenAI API key configured. Add an OpenAI provider account or set OPENAI_API_KEY."
+        case let .missingAPIKey(provider):
+            "No \(provider) API key configured. Add a \(provider) provider account or set the provider-specific environment variable."
         case .missingBaseURL:
             "No base URL configured. Set the appropriate base URL in UserDefaults."
         case .invalidResponse:
@@ -41,10 +44,10 @@ private struct WireLLMMessage: Encodable {
 private actor OpenAIClient {
     private let apiURL = URL(string: "https://api.openai.com/v1/chat/completions")!
 
-    /// Resolve API key from either UserDefaults ("openai_api_key") or the
+    /// Resolve API key from Keychain-backed provider accounts or the
     /// OPENAI_API_KEY environment variable.
     private func apiKey() throws -> String {
-        if let key = UserDefaults.standard.string(forKey: UserScope.scopedKey("openai_api_key")), !key.isEmpty {
+        if let key = ProviderAccountService.apiKeyFromKeychain(forProvider: "openai"), !key.isEmpty {
             return key
         }
         if let env = ProcessInfo.processInfo.environment["OPENAI_API_KEY"], !env.isEmpty {
@@ -102,8 +105,7 @@ private actor OpenAIClient {
 
         let (responseData, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
-            let bodyText = String(data: responseData, encoding: .utf8) ?? "<non-utf8>"
-            AppErrorReporter.log(message: "OpenAI error: status=\((response as? HTTPURLResponse)?.statusCode ?? -1) body=\(bodyText)", context: "LLMClients.OpenAIClient.sendChat")
+            AppErrorReporter.log(message: "OpenAI error: status=\((response as? HTTPURLResponse)?.statusCode ?? -1); response body omitted", context: "LLMClients.OpenAIClient.sendChat")
             throw LocalChatError.invalidResponse
         }
 
@@ -133,13 +135,13 @@ private actor AnthropicClient {
     private let apiURL = URL(string: "https://api.anthropic.com/v1/messages")!
 
     private func apiKey() throws -> String {
-        if let key = UserDefaults.standard.string(forKey: UserScope.scopedKey("anthropic_api_key")), !key.isEmpty {
+        if let key = ProviderAccountService.apiKeyFromKeychain(forProvider: "anthropic"), !key.isEmpty {
             return key
         }
         if let env = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"], !env.isEmpty {
             return env
         }
-        throw LocalChatError.missingOpenAIAPIKey
+        throw LocalChatError.missingAPIKey(provider: "Anthropic")
     }
 
     func sendChat(
@@ -211,8 +213,7 @@ private actor AnthropicClient {
 
         let (responseData, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
-            let bodyText = String(data: responseData, encoding: .utf8) ?? "<non-utf8>"
-            AppErrorReporter.log(message: "Anthropic error: status=\((response as? HTTPURLResponse)?.statusCode ?? -1) body=\(bodyText)", context: "LLMClients.AnthropicClient.sendChat")
+            AppErrorReporter.log(message: "Anthropic error: status=\((response as? HTTPURLResponse)?.statusCode ?? -1); response body omitted", context: "LLMClients.AnthropicClient.sendChat")
             throw LocalChatError.invalidResponse
         }
 
@@ -237,13 +238,13 @@ private actor GeminiClient {
     private let baseURL = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/")!
 
     private func apiKey() throws -> String {
-        if let key = UserDefaults.standard.string(forKey: UserScope.scopedKey("gemini_api_key")), !key.isEmpty {
+        if let key = ProviderAccountService.apiKeyFromKeychain(forProvider: "gemini"), !key.isEmpty {
             return key
         }
         if let env = ProcessInfo.processInfo.environment["GEMINI_API_KEY"], !env.isEmpty {
             return env
         }
-        throw LocalChatError.missingOpenAIAPIKey
+        throw LocalChatError.missingAPIKey(provider: "Gemini")
     }
 
     func sendChat(
@@ -295,8 +296,7 @@ private actor GeminiClient {
 
         let (responseData, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
-            let bodyText = String(data: responseData, encoding: .utf8) ?? "<non-utf8>"
-            AppErrorReporter.log(message: "Gemini error: status=\((response as? HTTPURLResponse)?.statusCode ?? -1) body=\(bodyText)", context: "LLMClients.GeminiClient.sendChat")
+            AppErrorReporter.log(message: "Gemini error: status=\((response as? HTTPURLResponse)?.statusCode ?? -1); response body omitted", context: "LLMClients.GeminiClient.sendChat")
             throw LocalChatError.invalidResponse
         }
 
