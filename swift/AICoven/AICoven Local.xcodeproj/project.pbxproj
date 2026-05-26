@@ -82,7 +82,7 @@
 		BEE115FF2F323794002A6499 /* AICoven.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; name = AICoven.xctestplan; path = AICovenTests/AICoven.xctestplan; sourceTree = "<group>"; };
 		BEEC93292F1BA63A00CF8992 /* AICoven.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = AICoven.xcodeproj; sourceTree = "<group>"; };
 		C332C8A5BD39B45B7E2D49C9 /* Production.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Production.xcconfig; path = Configuration/Production.xcconfig; sourceTree = "<group>"; };
-		CC6217AB7B164D84E084DA02 /* Localizable.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		CC6217AB7B164D84E084DA02 /* Localizable.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; path = Resources/Localizable.xcstrings; sourceTree = "<group>"; };
 		D6D7E32566F5C2A01A509066 /* Production.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Production.xcconfig; path = Configuration/Production.xcconfig; sourceTree = "<group>"; };
 		F7B7D46E74B0FEBDD709B869 /* Development.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Development.xcconfig; path = Configuration/Development.xcconfig; sourceTree = "<group>"; };
 		FBF2078188392AA09B91B8B5 /* Development.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Development.xcconfig; path = Configuration/Development.xcconfig; sourceTree = "<group>"; };
