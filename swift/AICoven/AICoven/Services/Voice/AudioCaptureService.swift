@@ -1,3 +1,4 @@
+#if os(iOS)
 import Foundation
 import AVFoundation
 import Accelerate
@@ -76,9 +77,12 @@ class AudioCaptureService {
         guard let channelData = buffer.floatChannelData?[0] else { return }
         let frameLength = Int(buffer.frameLength)
 
+        // Copy channel data before any async boundary or extended processing
+        let framesArray = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
+
         // Calculate RMS power
         var rms: Float = 0
-        vDSP_measqv(channelData, 1, &rms, vDSP_Length(frameLength))
+        vDSP_measqv(framesArray, 1, &rms, vDSP_Length(frameLength))
 
         let now = Date()
 
@@ -106,3 +110,5 @@ class AudioCaptureService {
         }
     }
 }
+
+#endif

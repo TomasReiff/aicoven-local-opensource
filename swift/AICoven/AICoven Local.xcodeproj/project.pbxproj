@@ -64,28 +64,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		0CE83C208D91A00C6C4D2789 /* GoogleService-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
-		0D0246F564542F74D9ADF95D /* GoogleService-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		10953D4494F14BAB643D9F8B /* Staging.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Staging.xcconfig; path = Configuration/Staging.xcconfig; sourceTree = "<group>"; };
 		31373AE08CFA91E22AE9AC59 /* Staging.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Staging.xcconfig; path = Configuration/Staging.xcconfig; sourceTree = "<group>"; };
-		38C89F8422EEB42813CEE48A /* AICoven-iOS.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = "AICoven-iOS.entitlements"; sourceTree = "<group>"; };
-		42DDC407680E8FA05ECF3261 /* GoogleService-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
-		4E695DA263C570F5B674489F /* Info-iOS.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "Info-iOS.plist"; sourceTree = "<group>"; };
-		4F587F7DDE3A10FF2F47E61D /* AICoven-macOS.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = "AICoven-macOS.entitlements"; sourceTree = "<group>"; };
 		4F587F7DDE3A10FF2F47E62E /* AICoven-macOS-Debug.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = "AICoven-macOS-Debug.entitlements"; sourceTree = "<group>"; };
-		50B2959302358E97B698FE48 /* AICoven-macOS.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = "AICoven-macOS.entitlements"; sourceTree = "<group>"; };
 		5ECDFCEBA0BD5C8DC015F50A /* Development.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Development.xcconfig; path = Configuration/Development.xcconfig; sourceTree = "<group>"; };
-		5F3617965CF110ACF8B2F0F9 /* AICoven-iOS.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = "AICoven-iOS.entitlements"; sourceTree = "<group>"; };
-		67F9BF6F14532D533BB54F0F /* Info-macOS.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "Info-macOS.plist"; sourceTree = "<group>"; };
 		719CF619A32AE9FB99895EAE /* Staging.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Staging.xcconfig; path = Configuration/Staging.xcconfig; sourceTree = "<group>"; };
 		8087460861DD70EEBF69D226 /* Production.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Production.xcconfig; path = Configuration/Production.xcconfig; sourceTree = "<group>"; };
-		A2D4850CBD444E5B7D780995 /* Info-iOS.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "Info-iOS.plist"; sourceTree = "<group>"; };
 		BE19521E2F1B9DA000168C79 /* AICoven Dev.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "AICoven Dev.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		BE241E8E2F1BA79800978BF3 /* AICoven-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "AICoven-iOS.entitlements"; sourceTree = "<group>"; };
-		BE241E8F2F1BA79800978BF3 /* AICoven-macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "AICoven-macOS.entitlements"; sourceTree = "<group>"; };
-		BE241E902F1BA79800978BF3 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
-		BE241E912F1BA79800978BF3 /* Info-iOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-iOS.plist"; sourceTree = "<group>"; };
-		BE241E922F1BA79800978BF3 /* Info-macOS.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-macOS.plist"; sourceTree = "<group>"; };
 		BE26DA1E2F35E8F700814AD6 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		BE40E36E2F1F48DD00184E2D /* AICoven-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "AICoven-iOS.entitlements"; sourceTree = "<group>"; };
 		BE40E36F2F1F48DD00184E2D /* AICoven-macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "AICoven-macOS.entitlements"; sourceTree = "<group>"; };
@@ -97,13 +82,8 @@
 		BEE115FF2F323794002A6499 /* AICoven.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; name = AICoven.xctestplan; path = AICovenTests/AICoven.xctestplan; sourceTree = "<group>"; };
 		BEEC93292F1BA63A00CF8992 /* AICoven.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = AICoven.xcodeproj; sourceTree = "<group>"; };
 		C332C8A5BD39B45B7E2D49C9 /* Production.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Production.xcconfig; path = Configuration/Production.xcconfig; sourceTree = "<group>"; };
-		C3EFABECC6DE8AB00F7CE8D2 /* AICoven-macOS.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = "AICoven-macOS.entitlements"; sourceTree = "<group>"; };
 		CC6217AB7B164D84E084DA02 /* Localizable.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		D6D7E32566F5C2A01A509066 /* Production.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Production.xcconfig; path = Configuration/Production.xcconfig; sourceTree = "<group>"; };
-		D92D20DB4F2F6AF8F9744309 /* Info-iOS.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "Info-iOS.plist"; sourceTree = "<group>"; };
-		D97C1364D99D71244506C92C /* AICoven-iOS.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = "AICoven-iOS.entitlements"; sourceTree = "<group>"; };
-		E6D1464143587A1A605F4AC7 /* Info-macOS.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "Info-macOS.plist"; sourceTree = "<group>"; };
-		EE121F3269D778C240EADFDC /* Info-macOS.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "Info-macOS.plist"; sourceTree = "<group>"; };
 		F7B7D46E74B0FEBDD709B869 /* Development.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Development.xcconfig; path = Configuration/Development.xcconfig; sourceTree = "<group>"; };
 		FBF2078188392AA09B91B8B5 /* Development.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Development.xcconfig; path = Configuration/Development.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -199,28 +179,18 @@
 			name = Configuration;
 			sourceTree = "<group>";
 		};
-		45DB879D71B21ABFAE67587A /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				CC6217AB7B164D84E084DA02 /* Localizable.xcstrings */,
-			);
-			name = Resources;
-			sourceTree = "<group>";
-		};
 		BE1952152F1B9DA000168C79 = {
 			isa = PBXGroup;
 			children = (
 				BE26DA1E2F35E8F700814AD6 /* GoogleService-Info.plist */,
 				BEE115FF2F323794002A6499 /* AICoven.xctestplan */,
 				BE40E3752F1F48DD00184E2D /* Resources */,
-				BE241E932F1BA79800978BF3 /* Resources */,
 				BE241E8D2F1BA6F300978BF3 /* Sources */,
 				BE1952202F1B9DA000168C79 /* AICoven */,
 				BEE115E82F323697002A6499 /* AICovenTests */,
 				BE19521F2F1B9DA000168C79 /* Products */,
 				05837A193D7264B354E2A37B /* Configuration */,
 				BE5AC8D82F3AD62C0053997B /* Frameworks */,
-				45DB879D71B21ABFAE67587A /* Resources */,
 			);
 			sourceTree = "<group>";
 		};
@@ -238,33 +208,6 @@
 			children = (
 			);
 			path = Sources;
-			sourceTree = "<group>";
-		};
-		BE241E932F1BA79800978BF3 /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				BE241E8E2F1BA79800978BF3 /* AICoven-iOS.entitlements */,
-				BE241E8F2F1BA79800978BF3 /* AICoven-macOS.entitlements */,
-				BE241E902F1BA79800978BF3 /* GoogleService-Info.plist */,
-				BE241E912F1BA79800978BF3 /* Info-iOS.plist */,
-				BE241E922F1BA79800978BF3 /* Info-macOS.plist */,
-				0CE83C208D91A00C6C4D2789 /* GoogleService-Info.plist */,
-				A2D4850CBD444E5B7D780995 /* Info-iOS.plist */,
-				EE121F3269D778C240EADFDC /* Info-macOS.plist */,
-				D97C1364D99D71244506C92C /* AICoven-iOS.entitlements */,
-				50B2959302358E97B698FE48 /* AICoven-macOS.entitlements */,
-				0D0246F564542F74D9ADF95D /* GoogleService-Info.plist */,
-				4E695DA263C570F5B674489F /* Info-iOS.plist */,
-				E6D1464143587A1A605F4AC7 /* Info-macOS.plist */,
-				38C89F8422EEB42813CEE48A /* AICoven-iOS.entitlements */,
-				4F587F7DDE3A10FF2F47E61D /* AICoven-macOS.entitlements */,
-				42DDC407680E8FA05ECF3261 /* GoogleService-Info.plist */,
-				D92D20DB4F2F6AF8F9744309 /* Info-iOS.plist */,
-				67F9BF6F14532D533BB54F0F /* Info-macOS.plist */,
-				5F3617965CF110ACF8B2F0F9 /* AICoven-iOS.entitlements */,
-				C3EFABECC6DE8AB00F7CE8D2 /* AICoven-macOS.entitlements */,
-			);
-			path = Resources;
 			sourceTree = "<group>";
 		};
 		BE40E3752F1F48DD00184E2D /* Resources */ = {
