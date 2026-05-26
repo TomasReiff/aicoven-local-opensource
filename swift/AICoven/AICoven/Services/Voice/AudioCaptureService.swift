@@ -103,7 +103,9 @@ class AudioCaptureService {
             }
         }
 
-        if isSpeaking || lastSpeechTime?.timeIntervalSinceNow ?? -1 > -requiredSilenceDuration {
+        // Only forward the buffer during active speech or the trailing silence window;
+        // the explicit `lastSpeechTime != nil` guard prevents forwarding before any speech is detected.
+        if isSpeaking || (lastSpeechTime != nil && lastSpeechTime!.timeIntervalSinceNow > -requiredSilenceDuration) {
             DispatchQueue.main.async {
                 self.delegate?.audioCaptureService(self, didCaptureBuffer: buffer)
             }

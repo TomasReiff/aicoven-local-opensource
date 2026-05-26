@@ -1,6 +1,7 @@
 #if os(iOS)
 import Foundation
 import AVFoundation
+import Accelerate
 import MediaPlayer
 import SwiftWhisper
 
@@ -273,14 +274,17 @@ Uživatel říká: \(text)"
     nonisolated func audioCaptureService(_ service: AudioCaptureService, didCaptureBuffer buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData?[0] else { return }
         let frameLength = Int(buffer.frameLength)
+        // Copy channel data immediately before any async boundary so the pointer remains valid
         let frames = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
+
+        // Compute RMS synchronously from the copied array (safe across async hops)
+        var rms: Float = 0
+        vDSP_measqv(frames, 1, &rms, vDSP_Length(frameLength))
 
         Task { @MainActor in
             self.audioData.append(contentsOf: frames)
 
-            // Calculate level for UI pulse
-            var rms: Float = 0
-            vDSP_measqv(channelData, 1, &rms, vDSP_Length(frameLength))
+            // Update UI pulse level
             self.audioLevel = rms
 
             if self.isSpeaking {
