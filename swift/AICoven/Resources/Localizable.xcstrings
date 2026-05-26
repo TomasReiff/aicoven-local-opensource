@@ -1,0 +1,16 @@
+{
+  "sourceLanguage": "cs",
+  "strings": {
+    "Tato aplikace vy\u017eaduje p\u0159\u00edstup k mikrofonu pro lok\u00e1ln\u00ed rozpozn\u00e1v\u00e1n\u00ed hlasu.": {
+      "localizations": {
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tato aplikace vy\u017eaduje p\u0159\u00edstup k mikrofonu pro lok\u00e1ln\u00ed rozpozn\u00e1v\u00e1n\u00ed hlasu."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

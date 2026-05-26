@@ -463,6 +463,9 @@ struct PersonalChatView: View {
             GradientDivider()
 
             // Message composer
+            // We embed VoiceInteractionView above or instead of the composer if active
+            VoiceInteractionView(activeThread: thread)
+
             EnhancedMessageComposer(
                 messageText: $messageText,
                 onSend: { attachments in

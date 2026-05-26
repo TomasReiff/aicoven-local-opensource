@@ -173,5 +173,9 @@
 	<string>$(SERVER_RSA_PUBLIC_KEY)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Tato aplikace vyžaduje přístup k mikrofonu pro lokální rozpoznávání hlasu.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Tato aplikace vyžaduje rozpoznávání řeči.</string>
 </dict>
 </plist>
