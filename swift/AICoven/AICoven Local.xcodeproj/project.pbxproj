@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3B0EB8E87AFDB8EE385D021A /* SwiftWhisper in Frameworks */ = {isa = PBXBuildFile; productRef = D7E5BEA07B20656CFB2FAD2E /* SwiftWhisper */; };
+		B25ECFEEB3C6C0B27F32CB76 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CC6217AB7B164D84E084DA02 /* Localizable.xcstrings */; };
 		BE0F0F112F3C4D5E00112233 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = BE0F0F102F3C4D5E00112233 /* GRDB */; };
 		BE1E1CB12F1F4CDE00CB393D /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = BE1E1CB02F1F4CDE00CB393D /* FirebaseAnalytics */; };
 		BE1E1CB32F1F4CDE00CB393D /* FirebaseAnalyticsCore in Frameworks */ = {isa = PBXBuildFile; productRef = BE1E1CB22F1F4CDE00CB393D /* FirebaseAnalyticsCore */; };
@@ -96,6 +98,7 @@
 		BEEC93292F1BA63A00CF8992 /* AICoven.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = AICoven.xcodeproj; sourceTree = "<group>"; };
 		C332C8A5BD39B45B7E2D49C9 /* Production.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Production.xcconfig; path = Configuration/Production.xcconfig; sourceTree = "<group>"; };
 		C3EFABECC6DE8AB00F7CE8D2 /* AICoven-macOS.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = "AICoven-macOS.entitlements"; sourceTree = "<group>"; };
+		CC6217AB7B164D84E084DA02 /* Localizable.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		D6D7E32566F5C2A01A509066 /* Production.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Production.xcconfig; path = Configuration/Production.xcconfig; sourceTree = "<group>"; };
 		D92D20DB4F2F6AF8F9744309 /* Info-iOS.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "Info-iOS.plist"; sourceTree = "<group>"; };
 		D97C1364D99D71244506C92C /* AICoven-iOS.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = "AICoven-iOS.entitlements"; sourceTree = "<group>"; };
@@ -108,11 +111,15 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		BE1952202F1B9DA000168C79 /* AICoven */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = AICoven;
 			sourceTree = "<group>";
 		};
 		BEE115E82F323697002A6499 /* AICovenTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = AICovenTests;
 			sourceTree = "<group>";
 		};
@@ -162,6 +169,7 @@
 				BE9ABF732F298CEB00655DCB /* FirebaseCore in Frameworks */,
 				BE7BEB1C2F1CEEE500096E97 /* FirebaseAnalyticsCore in Frameworks */,
 				BE0F0F112F3C4D5E00112233 /* GRDB in Frameworks */,
+				3B0EB8E87AFDB8EE385D021A /* SwiftWhisper in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -191,6 +199,14 @@
 			name = Configuration;
 			sourceTree = "<group>";
 		};
+		45DB879D71B21ABFAE67587A /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				CC6217AB7B164D84E084DA02 /* Localizable.xcstrings */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+		};
 		BE1952152F1B9DA000168C79 = {
 			isa = PBXGroup;
 			children = (
@@ -204,6 +220,7 @@
 				BE19521F2F1B9DA000168C79 /* Products */,
 				05837A193D7264B354E2A37B /* Configuration */,
 				BE5AC8D82F3AD62C0053997B /* Frameworks */,
+				45DB879D71B21ABFAE67587A /* Resources */,
 			);
 			sourceTree = "<group>";
 		};
@@ -297,6 +314,9 @@
 				BE1952202F1B9DA000168C79 /* AICoven */,
 			);
 			name = AICoven;
+			packageProductDependencies = (
+				D7E5BEA07B20656CFB2FAD2E /* SwiftWhisper */,
+			);
 			productName = AICoven;
 			productReference = BE19521E2F1B9DA000168C79 /* AICoven Dev.app */;
 			productType = "com.apple.product-type.application";
@@ -318,8 +338,6 @@
 				BEE115E82F323697002A6499 /* AICovenTests */,
 			);
 			name = AICovenTests;
-			packageProductDependencies = (
-			);
 			productName = AICovenTests;
 			productReference = BEE115E72F323697002A6499 /* AICovenTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -344,11 +362,12 @@
 				};
 			};
 			buildConfigurationList = BE1952192F1B9DA000168C79 /* Build configuration list for PBXProject "AICoven Local" */;
-			developmentRegion = en;
+			developmentRegion = cs;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
+				cs,
 			);
 			mainGroup = BE1952152F1B9DA000168C79;
 			minimizedProjectReferenceProxies = 1;
@@ -356,6 +375,7 @@
 				BE241E972F1BA8F400978BF3 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				BE0F0F0F2F3C4D5E00112233 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
 				BE43C94C2F3D70A000D85430 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+				E45AAF43B0BC26E2E169DA79 /* XCRemoteSwiftPackageReference "SwiftWhisper" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = BE19521F2F1B9DA000168C79 /* Products */;
@@ -381,6 +401,7 @@
 			files = (
 				BE40E37A2F1F48DD00184E2D /* Assets.xcassets in Resources */,
 				BE26DA1F2F35E8F700814AD6 /* GoogleService-Info.plist in Resources */,
+				B25ECFEEB3C6C0B27F32CB76 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -874,6 +895,14 @@
 				minimumVersion = 2.30.3;
 			};
 		};
+		E45AAF43B0BC26E2E169DA79 /* XCRemoteSwiftPackageReference "SwiftWhisper" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/exPHAT/SwiftWhisper.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1071,6 +1100,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = BE241E972F1BA8F400978BF3 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseRemoteConfig;
+		};
+		D7E5BEA07B20656CFB2FAD2E /* SwiftWhisper */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E45AAF43B0BC26E2E169DA79 /* XCRemoteSwiftPackageReference "SwiftWhisper" */;
+			productName = SwiftWhisper;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

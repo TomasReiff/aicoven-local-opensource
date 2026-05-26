@@ -89,5 +89,9 @@
 	<true/>
 	<key>ITSEncryptionExportComplianceCode</key>
 	<string>6bc71f25-8aaa-4bbe-a167-e112342eec07</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Tato aplikace vyžaduje přístup k mikrofonu pro lokální rozpoznávání hlasu.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Tato aplikace vyžaduje rozpoznávání řeči.</string>
 </dict>
 </plist>

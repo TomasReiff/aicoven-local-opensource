@@ -1,0 +1,16 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Tato aplikace vyžaduje přístup k mikrofonu pro lokální rozpoznávání hlasu." : {
+      "localizations" : {
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tato aplikace vyžaduje přístup k mikrofonu pro lokální rozpoznávání hlasu."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
